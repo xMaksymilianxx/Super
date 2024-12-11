@@ -1,277 +1,297 @@
-import requests
-from datetime import datetime, timedelta
-import numpy as np
-from typing import List, Dict, Any, Tuple
-import pandas as pd
-from dataclasses import dataclass
-import json
-from rich.console import Console
-from rich.table import Table
-from rich import print as rprint
-import aiohttp
-import asyncio
-from statistics import mean, stdev
-
-class OddsAnalyzer:
-    def __init__(self, api_key: str = "631900acd2063f2fa684e2257dfa5588"):
-        self.api_key = api_key
-        self.base_url = "https://api.the-odds-api.com/v4/sports"
-        self.bookmakers = [
-            "betclic", "bet365", "unibet", "williamhill", 
-            "pinnacle", "marathonbet", "bwin"
-        ]
-
-    async def fetch_odds(self, sport: str = "soccer") -> Dict[str, Any]:
-        """Pobieranie kursów z różnych bukmacherów"""
-        async with aiohttp.ClientSession() as session:
-            url = f"{self.base_url}/{sport}/odds"
-            params = {
-                "apiKey": self.api_key,
-                "regions": "eu",
-                "markets": "h2h,totals,spreads",
-                "oddsFormat": "decimal",
-                "bookmakers": ",".join(self.bookmakers)
-            }
-            async with session.get(url, params=params) as response:
-                return await response.json()
-
-    def analyze_value_bets(self, odds_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Analiza value betów i pułapek bukmacherskich"""
-        value_bets = []
-        
-        for match in odds_data:
-            bookmaker_odds = self._extract_bookmaker_odds(match)
-            if not bookmaker_odds:
-                continue
-
-            analysis = {
-                'match_id': match['id'],
-                'home_team': match['home_team'],
-                'away_team': match['away_team'],
-                'start_time': match['commence_time'],
-                'value_opportunities': [],
-                'trap_indicators': [],
-                'market_analysis': {}
-            }
-
-            # Analiza każdego rynku
-            for market in ['h2h', 'totals', 'spreads']:
-                market_analysis = self._analyze_market(bookmaker_odds, market)
-                if market_analysis:
-                    analysis['market_analysis'][market] = market_analysis
-
-            # Wykrywanie value betów
-            value_opportunities = self._find_value_bets(analysis['market_analysis'])
-            if value_opportunities:
-                analysis['value_opportunities'] = value_opportunities
-
-            # Wykrywanie pułapek bukmacherskich
-            trap_indicators = self._detect_trap_bets(analysis['market_analysis'])
-            if trap_indicators:
-                analysis['trap_indicators'] = trap_indicators
-
-            if analysis['value_opportunities'] or analysis['trap_indicators']:
-                value_bets.append(analysis)
-
-        return value_bets
-
-    def _extract_bookmaker_odds(self, match: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
-        """Ekstrakcja kursów od różnych bukmacherów"""
-        bookmaker_odds = {}
-        for bookmaker in match.get('bookmakers', []):
-            if bookmaker['key'] in self.bookmakers:
-                markets = {}
-                for market in bookmaker.get('markets', []):
-                    markets[market['key']] = {
-                        outcome['name']: outcome['price']
-                        for outcome in market['outcomes']
-                    }
-                bookmaker_odds[bookmaker['key']] = markets
-        return bookmaker_odds
-
-    def _analyze_market(self, bookmaker_odds: Dict[str, Dict[str, float]], 
-                       market_type: str) -> Dict[str, Any]:
-        """Szczegółowa analiza konkretnego rynku"""
-        market_data = {}
-        odds_collection = []
-
-        for bookie, markets in bookmaker_odds.items():
-            if market_type in markets:
-                market_data[bookie] = markets[market_type]
-                odds_collection.extend(markets[market_type].values())
-
-        if not odds_collection:
-            return None
-
-        return {
-            'mean_odds': mean(odds_collection),
-            'std_dev': stdev(odds_collection) if len(odds_collection) > 1 else 0,
-            'margin': self._calculate_margin(market_data),
-            'outliers': self._detect_outliers(odds_collection),
-            'consensus_probability': self._calculate_consensus(market_data)
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Analizy Meczów i Value Betów</title>
+    <style>
+        :root {
+            --primary-color: #2196F3;
+            --success-color: #4CAF50;
+            --warning-color: #FF9800;
+            --danger-color: #F44336;
+            --dark-bg: #1a1a1a;
+            --card-bg: #2d2d2d;
+            --text-color: #ffffff;
         }
 
-    def _calculate_margin(self, market_data: Dict[str, Dict[str, float]]) -> float:
-        """Obliczanie marży bukmacherskiej"""
-        margins = []
-        for bookie_odds in market_data.values():
-            implied_probs = [1/odd for odd in bookie_odds.values()]
-            margins.append(sum(implied_probs) - 1)
-        return mean(margins) if margins else 0
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--dark-bg);
+            color: var(--text-color);
+            line-height: 1.6;
+        }
 
-    def _detect_outliers(self, odds: List[float]) -> List[float]:
-        """Wykrywanie odstających kursów"""
-        if len(odds) < 2:
-            return []
-        
-        mean_odd = mean(odds)
-        std_dev = stdev(odds)
-        return [odd for odd in odds if abs(odd - mean_odd) > 2 * std_dev]
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
 
-    def _find_value_bets(self, market_analysis: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Identyfikacja value betów"""
-        value_bets = []
-        
-        for market, analysis in market_analysis.items():
-            if analysis['std_dev'] > 0.1:  # Znacząca różnica w kursach
-                consensus_prob = analysis['consensus_probability']
-                market_odds = 1 / consensus_prob if consensus_prob > 0 else 0
-                
-                if market_odds > analysis['mean_odds'] * 1.05:  # 5% value
-                    value_bets.append({
-                        'market': market,
-                        'expected_value': market_odds / analysis['mean_odds'] - 1,
-                        'confidence': self._calculate_confidence(analysis)
-                    })
-        
-        return value_bets
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: var(--card-bg);
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
 
-    def _detect_trap_bets(self, market_analysis: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Wykrywanie potencjalnych pułapek bukmacherskich"""
-        traps = []
-        
-        for market, analysis in market_analysis.items():
-            # Podejrzanie wysokie kursy
-            if analysis['outliers']:
-                traps.append({
-                    'market': market,
-                    'type': 'suspicious_odds',
-                    'severity': 'high' if analysis['std_dev'] > 0.2 else 'medium'
-                })
-            
-            # Podejrzanie niska marża
-            if analysis['margin'] < 0.02:  # Marża poniżej 2%
-                traps.append({
-                    'market': market,
-                    'type': 'suspicious_margin',
-                    'severity': 'high'
-                })
-        
-        return traps
+        .header h1 {
+            margin: 0;
+            color: var(--primary-color);
+            font-size: 2.5em;
+        }
 
-    def _calculate_confidence(self, analysis: Dict[str, Any]) -> float:
-        """Obliczanie poziomu pewności dla danej analizy"""
-        confidence = 1.0
-        
-        # Zmniejsz pewność przy wysokiej odchyłce standardowej
-        confidence *= (1 - min(analysis['std_dev'], 0.5))
-        
-        # Zmniejsz pewność przy wysokiej marży
-        confidence *= (1 - min(analysis['margin'], 0.3))
-        
-        # Zmniejsz pewność przy obecności outlierów
-        if analysis['outliers']:
-            confidence *= 0.8
-            
-        return confidence
+        .control-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
 
-class MatchAnalyzer(OddsAnalyzer):
-    def __init__(self, odds_api_key: str, betclic_api_key: str):
-        super().__init__(odds_api_key)
-        self.betclic_api_key = betclic_api_key
-        self.console = Console()
+        .control-card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
 
-    async def analyze_matches(self, date: datetime) -> List[Dict[str, Any]]:
-        """Kompleksowa analiza meczów"""
-        odds_data = await self.fetch_odds()
-        value_bets = self.analyze_value_bets(odds_data)
-        
-        analyzed_matches = []
-        for match in value_bets:
-            match_analysis = {
-                'basic_info': {
-                    'match_id': match['match_id'],
-                    'teams': f"{match['home_team']} vs {match['away_team']}",
-                    'date': match['start_time']
-                },
-                'odds_analysis': {
-                    'value_opportunities': match['value_opportunities'],
-                    'trap_warnings': match['trap_indicators']
-                },
-                'confidence_score': self._calculate_match_confidence(match)
+        .match-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .match-card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .match-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .match-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .teams {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        .confidence {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .star-rating {
+            color: var(--warning-color);
+        }
+
+        .value-bets {
+            margin: 15px 0;
+            padding: 10px;
+            background: rgba(76, 175, 80, 0.1);
+            border-radius: 5px;
+        }
+
+        .warnings {
+            margin: 15px 0;
+            padding: 10px;
+            background: rgba(244, 67, 54, 0.1);
+            border-radius: 5px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background-color 0.3s ease;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #1976D2;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            font-size: 1.2em;
+        }
+
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .stat-item {
+            background: rgba(33, 150, 243, 0.1);
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
             }
-            analyzed_matches.append(match_analysis)
-        
-        return sorted(analyzed_matches, 
-                     key=lambda x: x['confidence_score'], 
-                     reverse=True)
 
-    def display_analysis(self, analyzed_matches: List[Dict[str, Any]]):
-        """Wyświetlanie wyników analizy"""
-        table = Table(title="🎯 Analiza Value Betów i Pułapek Bukmacherskich")
-        
-        table.add_column("Mecz", style="cyan")
-        table.add_column("Value Bety", style="green")
-        table.add_column("Ostrzeżenia", style="red")
-        table.add_column("Pewność", style="yellow")
-        
-        for match in analyzed_matches:
-            value_bets = "\n".join([
-                f"📈 {v['market']}: {v['expected_value']:.1%} EV"
-                for v in match['odds_analysis']['value_opportunities']
-            ])
-            
-            warnings = "\n".join([
-                f"⚠️ {t['market']}: {t['type']} ({t['severity']})"
-                for t in match['odds_analysis']['trap_warnings']
-            ])
-            
-            confidence = match['confidence_score']
-            confidence_display = "🌟" * int(confidence * 5)
-            
-            table.add_row(
-                match['basic_info']['teams'],
-                value_bets or "Brak",
-                warnings or "Brak ostrzeżeń",
-                f"{confidence_display} ({confidence:.1%})"
-            )
-        
-        self.console.print(table)
+            .header h1 {
+                font-size: 2em;
+            }
 
-async def main():
-    analyzer = MatchAnalyzer(
-        odds_api_key="631900acd2063f2fa684e2257dfa5588",
-        betclic_api_key="your_betclic_api_key"
-    )
-    
-    while True:
-        rprint("[bold cyan]🎯 System Analizy Value Betów[/bold cyan]")
-        rprint("\n1. 📅 Analiza na dziś")
-        rprint("2. 📊 Analiza na jutro")
-        rprint("3. ❌ Wyjście")
-        
-        choice = input("\nWybierz opcję: ")
-        
-        if choice == "1":
-            analyzed_matches = await analyzer.analyze_matches(datetime.now())
-            analyzer.display_analysis(analyzed_matches)
-        elif choice == "2":
-            analyzed_matches = await analyzer.analyze_matches(
-                datetime.now() + timedelta(days=1)
-            )
-            analyzer.display_analysis(analyzed_matches)
-        elif choice == "3":
-            break
+            .match-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🎯 System Analizy Meczów i Value Betów</h1>
+        </header>
 
-if __name__ == "__main__":
-    asyncio.run(main())
+        <div class="control-panel">
+            <div class="control-card">
+                <h2>📅 Wybór daty</h2>
+                <input type="date" id="dateSelect" class="btn">
+                <button onclick="analyzeMecze()" class="btn btn-primary">Analizuj</button>
+            </div>
+            
+            <div class="control-card">
+                <h2>⚙️ Filtry</h2>
+                <select id="confidenceFilter" class="btn">
+                    <option value="0">Wszystkie mecze</option>
+                    <option value="0.7">Pewność > 70%</option>
+                    <option value="0.8">Pewność > 80%</option>
+                    <option value="0.9">Pewność > 90%</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="loadingIndicator" class="loading" style="display: none;">
+            ⌛ Trwa analiza meczów...
+        </div>
+
+        <div id="matchesContainer" class="match-grid">
+            <!-- Tutaj będą dynamicznie dodawane karty meczów -->
+        </div>
+    </div>
+
+    <script>
+        async function analyzeMecze() {
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const matchesContainer = document.getElementById('matchesContainer');
+            const selectedDate = document.getElementById('dateSelect').value;
+            const confidenceFilter = parseFloat(document.getElementById('confidenceFilter').value);
+
+            loadingIndicator.style.display = 'block';
+            matchesContainer.innerHTML = '';
+
+            try {
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        date: selectedDate,
+                        confidenceThreshold: confidenceFilter
+                    })
+                });
+
+                const matches = await response.json();
+                displayMatches(matches);
+            } catch (error) {
+                console.error('Błąd podczas analizy:', error);
+                matchesContainer.innerHTML = '<p class="error">Wystąpił błąd podczas analizy meczów.</p>';
+            } finally {
+                loadingIndicator.style.display = 'none';
+            }
+        }
+
+        function displayMatches(matches) {
+            const container = document.getElementById('matchesContainer');
+            
+            matches.forEach(match => {
+                const matchCard = createMatchCard(match);
+                container.appendChild(matchCard);
+            });
+        }
+
+        function createMatchCard(match) {
+            const card = document.createElement('div');
+            card.className = 'match-card';
+            
+            const starRating = '⭐'.repeat(Math.round(match.confidence_score * 5));
+            
+            card.innerHTML = `
+                <div class="match-header">
+                    <div class="teams">${match.basic_info.teams}</div>
+                    <div class="confidence">
+                        <span class="star-rating">${starRating}</span>
+                        <span>(${(match.confidence_score * 100).toFixed(1)}%)</span>
+                    </div>
+                </div>
+
+                <div class="value-bets">
+                    <h3>📈 Value Bety</h3>
+                    ${match.odds_analysis.value_opportunities.map(v => `
+                        <div>${v.market}: ${(v.expected_value * 100).toFixed(1)}% EV</div>
+                    `).join('')}
+                </div>
+
+                ${match.odds_analysis.trap_warnings.length > 0 ? `
+                    <div class="warnings">
+                        <h3>⚠️ Ostrzeżenia</h3>
+                        ${match.odds_analysis.trap_warnings.map(w => `
+                            <div>${w.market}: ${w.type} (${w.severity})</div>
+                        `).join('')}
+                    </div>
+                ` : ''}
+
+                <div class="stats-container">
+                    <div class="stat-item">
+                        <div>📊 Kursy</div>
+                        <div>${match.odds_analysis.average_odds?.toFixed(2) || 'N/A'}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div>💰 Marża</div>
+                        <div>${(match.odds_analysis.margin * 100).toFixed(1)}%</div>
+                    </div>
+                </div>
+            `;
+            
+            return card;
+        }
+
+        // Inicjalizacja daty na dzisiaj
+        document.getElementById('dateSelect').valueAsDate = new Date();
+    </script>
+</body>
+</html>
