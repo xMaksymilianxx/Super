@@ -47,38 +47,41 @@
     </div>
 
     <script>
-        const puppeteer = require('puppeteer'); // Wymaga instalacji Puppeteer
-
         async function fetchMatches(date) {
             const url = `https://www.sofascore.com/pl/pilka-nozna/${date}`;
             console.log(`Pobieranie danych z URL: ${url}`);
 
-            const browser = await puppeteer.launch();
-            const page = await browser.newPage();
-
             try {
-                await page.goto(url, { waitUntil: 'networkidle2' });
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`Błąd podczas pobierania danych. Status: ${response.status}`);
+                }
 
-                // Pobranie danych o meczach
-                const matches = await page.evaluate(() => {
-                    let matchData = [];
-                    document.querySelectorAll('.event-card').forEach(match => {
-                        const homeTeam = match.querySelector('.home-team .team-name')?.textContent.trim();
-                        const awayTeam = match.querySelector('.away-team .team-name')?.textContent.trim();
+                const html = await response.text();
+                console.log("Pobrany HTML:", html);
 
-                        if (homeTeam && awayTeam) {
-                            matchData.push({ homeTeam, awayTeam });
-                        }
-                    });
-                    return matchData;
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+
+                // Pobranie elementów meczów
+                const matchElements = doc.querySelectorAll('.event-card');
+                let matches = [];
+
+                matchElements.forEach(match => {
+                    const homeTeam = match.querySelector('.home-team .team-name')?.textContent.trim();
+                    const awayTeam = match.querySelector('.away-team .team-name')?.textContent.trim();
+
+                    if (homeTeam && awayTeam) {
+                        matches.push({ homeTeam, awayTeam });
+                    }
                 });
 
-                await browser.close();
+                console.log("Znalezione mecze:", matches);
+
                 return matches;
 
             } catch (error) {
                 console.error('Błąd podczas pobierania danych:', error.message);
-                await browser.close();
                 return [];
             }
         }
@@ -104,6 +107,8 @@
         }
 
         async function startAnalysis() {
+            console.log("Funkcja startAnalysis została uruchomiona.");
+
             const dateInput = document.getElementById('dateSelect').value;
 
             if (!dateInput) {
@@ -111,10 +116,14 @@
                 return;
             }
 
+            console.log(`Wybrana data: ${dateInput}`);
+
             document.getElementById('loadingIndicator').style.display = 'block';
 
             try {
                 const matches = await fetchMatches(dateInput);
+
+                console.log("Pobrane mecze:", matches);
 
                 displayResults(matches);
 
