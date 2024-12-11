@@ -48,6 +48,7 @@
 
     <script>
         async function fetchMatches(date) {
+            // Link do Sofascore dla wybranej daty
             const url = `https://www.sofascore.com/pl/pilka-nozna/${date}`;
             console.log(`Pobieranie danych z URL: ${url}`);
 
@@ -64,7 +65,7 @@
                 const doc = parser.parseFromString(html, 'text/html');
 
                 // Pobranie elementów meczów
-                const matchElements = doc.querySelectorAll('.event-card');
+                const matchElements = doc.querySelectorAll('.event-card'); // Zaktualizuj selektor, jeśli strona się zmieniła
                 let matches = [];
 
                 matchElements.forEach(match => {
