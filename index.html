@@ -152,18 +152,23 @@
             color: var(--text-color);
         }
 
-        .confidence-meter {
-            height: 10px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 5px;
+        .date-warning {
+            color: var(--warning-color);
+            font-size: 0.9em;
             margin-top: 5px;
         }
 
-        .confidence-value {
-            height: 100%;
-            background: var(--success-color);
+        .league-select {
+            margin-top: 10px;
+        }
+
+        .debug-info {
+            background: rgba(33, 150, 243, 0.1);
+            padding: 10px;
+            margin: 10px 0;
             border-radius: 5px;
-            transition: width 0.3s ease;
+            font-family: monospace;
+            font-size: 0.9em;
         }
 
         @media (max-width: 768px) {
@@ -189,6 +194,14 @@
             <div class="control-card">
                 <h2>📅 Wybór daty</h2>
                 <input type="date" id="dateSelect" class="date-input">
+                <div id="dateWarning" class="date-warning"></div>
+                <select id="leagueSelect" class="league-select">
+                    <option value="all">Wszystkie ligi</option>
+                    <option value="39">Premier League</option>
+                    <option value="140">La Liga</option>
+                    <option value="135">Serie A</option>
+                    <option value="78">Bundesliga</option>
+                </select>
                 <button onclick="startAnalysis()" class="btn">Analizuj</button>
             </div>
             
@@ -213,191 +226,225 @@
             ⌛ Trwa kompleksowa analiza meczów...
         </div>
 
+        <div id="debugInfo" class="debug-info" style="display: none;">
+            <!-- Informacje debugowania będą tutaj -->
+        </div>
+
         <div id="matchesContainer" class="match-grid">
             <!-- Tutaj będą wyświetlane analizowane mecze -->
         </div>
     </div>
+<script>
+    const API_KEY = 'ac0417c6e0dcfa236b146b9585892c9a';
+    const API_URL = 'https://v3.football.api-sports.io';
+    const DEBUG = true;
 
-    <script>
-        const API_KEY = 'ac0417c6e0dcfa236b146b9585892c9a';
-        const API_URL = 'https://v3.football.api-sports.io';
-                async function startAnalysis() {
-            const loadingIndicator = document.getElementById('loadingIndicator');
-            const matchesContainer = document.getElementById('matchesContainer');
-            const systemStatus = document.getElementById('systemStatus');
-            const selectedDate = document.getElementById('dateSelect').value;
-            const analysisDepth = document.getElementById('analysisDepth').value;
-
-            try {
-                loadingIndicator.style.display = 'block';
-                systemStatus.textContent = 'Pobieranie danych...';
-                matchesContainer.innerHTML = '';
-
-                const matches = await fetchMatches(selectedDate);
-                
-                if (!matches || matches.length === 0) {
-                    throw new Error('Brak dostępnych meczów na wybrany dzień');
-                }
-
-                systemStatus.textContent = 'Analiza danych...';
-                const analyzedMatches = await performCompleteAnalysis(matches, analysisDepth);
-                displayResults(analyzedMatches);
-                systemStatus.textContent = 'Analiza zakończona';
-
-            } catch (error) {
-                console.error('Error:', error);
-                matchesContainer.innerHTML = `
-                    <div class="error-message">
-                        <p>⚠️ Wystąpił błąd podczas analizy</p>
-                        <p>Szczegóły: ${error.message}</p>
-                    </div>`;
-                systemStatus.textContent = 'Wystąpił błąd';
-            } finally {
-                loadingIndicator.style.display = 'none';
+    function debugLog(message, data = null) {
+        if (DEBUG) {
+            console.log(message, data);
+            const debugInfo = document.getElementById('debugInfo');
+            debugInfo.style.display = 'block';
+            debugInfo.innerHTML += `<div>${message}</div>`;
+            if (data) {
+                debugInfo.innerHTML += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
             }
         }
+    }
 
-        async function fetchMatches(date) {
-            const response = await fetch(`${API_URL}/fixtures/date/${date}`, {
+    async function startAnalysis() {
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const matchesContainer = document.getElementById('matchesContainer');
+        const systemStatus = document.getElementById('systemStatus');
+        const selectedDate = document.getElementById('dateSelect').value;
+        const selectedLeague = document.getElementById('leagueSelect').value;
+        const analysisDepth = document.getElementById('analysisDepth').value;
+
+        try {
+            loadingIndicator.style.display = 'block';
+            systemStatus.textContent = 'Pobieranie danych...';
+            matchesContainer.innerHTML = '';
+            debugLog('Rozpoczęcie analizy', { date: selectedDate, league: selectedLeague });
+
+            const matches = await fetchMatches(selectedDate, selectedLeague);
+            debugLog('Pobrane mecze:', matches);
+
+            systemStatus.textContent = 'Analiza danych...';
+            const analyzedMatches = await analyzeMatches(matches, analysisDepth);
+            debugLog('Przeanalizowane mecze:', analyzedMatches);
+
+            displayResults(analyzedMatches);
+            systemStatus.textContent = 'Analiza zakończona';
+
+        } catch (error) {
+            console.error('Error:', error);
+            debugLog('Błąd:', error.message);
+            matchesContainer.innerHTML = `
+                <div class="error-message">
+                    <p>⚠️ Wystąpił błąd podczas analizy</p>
+                    <p>Szczegóły: ${error.message}</p>
+                </div>`;
+            systemStatus.textContent = 'Wystąpił błąd';
+        } finally {
+            loadingIndicator.style.display = 'none';
+        }
+    }
+
+    async function fetchMatches(date, league) {
+        const formattedDate = new Date(date).toISOString().split('T')[0];
+        let url = new URL(`${API_URL}/fixtures`);
+        url.searchParams.append('date', formattedDate);
+        
+        if (league !== 'all') {
+            url.searchParams.append('league', league);
+        }
+
+        debugLog('Wysyłanie zapytania do API:', url.toString());
+
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'x-rapidapi-host': 'v3.football.api-sports.io',
+                'x-rapidapi-key': API_KEY
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Błąd API (${response.status}): ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        debugLog('Odpowiedź API:', data);
+
+        if (!data.response || data.response.length === 0) {
+            throw new Error('Brak dostępnych meczów na wybrany dzień. Wybierz inną datę.');
+        }
+
+        return data.response;
+    }
+
+    async function analyzeMatches(matches, analysisDepth) {
+        return Promise.all(matches.map(async match => {
+            try {
+                const matchData = await fetchMatchData(match.fixture.id);
+                const analysis = await performAnalysis(match, matchData, analysisDepth);
+                
+                return {
+                    match: match,
+                    data: matchData,
+                    analysis: analysis,
+                    bestBet: findBestBet(analysis)
+                };
+            } catch (error) {
+                debugLog(`Błąd analizy meczu ${match.fixture.id}:`, error);
+                return null;
+            }
+        })).then(results => results.filter(result => result !== null));
+    }
+
+    async function fetchMatchData(fixtureId) {
+        const endpoints = [
+            `fixtures/statistics?fixture=${fixtureId}`,
+            `fixtures/events?fixture=${fixtureId}`,
+            `fixtures/lineups?fixture=${fixtureId}`,
+            `fixtures/players?fixture=${fixtureId}`
+        ];
+
+        const results = await Promise.all(endpoints.map(endpoint => 
+            fetch(`${API_URL}/${endpoint}`, {
                 headers: {
                     'x-rapidapi-host': 'v3.football.api-sports.io',
                     'x-rapidapi-key': API_KEY
                 }
+            }).then(res => res.json())
+        ));
+
+        return {
+            statistics: results[0].response,
+            events: results[1].response,
+            lineups: results[2].response,
+            players: results[3].response
+        };
+    }
+
+    async function performAnalysis(match, matchData, analysisDepth) {
+        const analysis = {
+            basic: analyzeBasicFactors(match, matchData),
+            form: analyzeTeamForm(matchData),
+            players: analyzePlayerPerformance(matchData),
+            tactics: analyzeTacticalSetup(matchData)
+        };
+
+        if (analysisDepth === 'advanced' || analysisDepth === 'full') {
+            analysis.advanced = await analyzeAdvancedFactors(match, matchData);
+        }
+
+        if (analysisDepth === 'full') {
+            analysis.detailed = await analyzeDetailedFactors(match, matchData);
+        }
+
+        return analysis;
+    }
+
+    function findBestBet(analysis) {
+        const predictions = [
+            { type: 'winner', ...predictMatchWinner(analysis) },
+            { type: 'goals', ...predictGoals(analysis) },
+            { type: 'btts', ...predictBTTS(analysis) },
+            { type: 'corners', ...predictCorners(analysis) },
+            { type: 'cards', ...predictCards(analysis) }
+        ];
+
+        return predictions.reduce((best, current) => 
+            current.confidence > best.confidence ? current : best
+        );
+    }
+
+    function displayResults(analyzedMatches) {
+        const container = document.getElementById('matchesContainer');
+        
+        analyzedMatches
+            .sort((a, b) => b.analysis.confidence - a.analysis.confidence)
+            .forEach(({match, data, analysis, bestBet}) => {
+                const card = document.createElement('div');
+                card.className = 'match-card';
+                
+                const confidence = (bestBet.confidence * 100).toFixed(1);
+                const stars = '⭐'.repeat(Math.round(bestBet.confidence * 5));
+                
+                card.innerHTML = `
+                    <div class="match-header">
+                        <h3>${match.teams.home.name} vs ${match.teams.away.name}</h3>
+                        <div>🕒 ${new Date(match.fixture.date).toLocaleString()}</div>
+                    </div>
+                    <div class="prediction-section">
+                        <h4>Najlepszy typ (${confidence}% ${stars})</h4>
+                        <div class="best-bet">
+                            <p>Typ: <strong>${bestBet.prediction}</strong></p>
+                            <p>Uzasadnienie: ${bestBet.reason}</p>
+                        </div>
+                        <div class="analysis-details">
+                            <h5>Szczegóły analizy:</h5>
+                            <div class="team-stats">
+                                <div class="stat-item">
+                                    <strong>Forma gospodarzy:</strong> ${analysis.form.home}
+                                </div>
+                                <div class="stat-item">
+                                    <strong>Forma gości:</strong> ${analysis.form.away}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(card);
             });
+    }
 
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            return data.response;
-        }
-
-        async function performCompleteAnalysis(matches, analysisDepth) {
-            return Promise.all(matches.map(async match => {
-                try {
-                    // Pobieranie wszystkich potrzebnych danych
-                    const matchData = await fetchCompleteMatchData(match);
-                    const analysis = await analyzeAllFactors(match, matchData, analysisDepth);
-                    
-                    return {
-                        match: match,
-                        data: matchData,
-                        analysis: analysis,
-                        bestBet: selectBestBet(analysis)
-                    };
-                } catch (error) {
-                    console.error(`Błąd analizy meczu ${match.fixture.id}:`, error);
-                    return null;
-                }
-            })).then(results => results.filter(result => result !== null));
-        }
-
-        async function fetchCompleteMatchData(match) {
-            const [stats, h2h, teamStats, players, injuries, news] = await Promise.all([
-                fetchMatchStats(match.fixture.id),
-                fetchH2H(match.teams.home.id, match.teams.away.id),
-                fetchTeamStats(match.teams.home.id, match.teams.away.id),
-                fetchPlayerStats(match.teams.home.id, match.teams.away.id),
-                fetchInjuries(match.teams.home.id, match.teams.away.id),
-                fetchTeamNews(match.teams.home.id, match.teams.away.id)
-            ]);
-
-            return {
-                stats,
-                h2h,
-                teamStats,
-                players,
-                injuries,
-                news,
-                tacticalAnalysis: analyzeTactics(stats, teamStats),
-                motivationAnalysis: analyzeMotivation(news, teamStats),
-                weatherImpact: await analyzeWeatherImpact(match.fixture.venue.id, match.fixture.date)
-            };
-        }
-
-        async function analyzeAllFactors(match, matchData, analysisDepth) {
-            const analysis = {
-                matchWinner: analyzeMatchWinner(match, matchData),
-                goals: analyzeGoals(match, matchData),
-                btts: analyzeBTTS(match, matchData),
-                corners: analyzeCorners(match, matchData),
-                cards: analyzeCards(match, matchData),
-                playerProps: analyzePlayerProps(match, matchData),
-                firstGoal: analyzeFirstGoal(match, matchData)
-            };
-
-            if (analysisDepth === 'advanced' || analysisDepth === 'full') {
-                analysis.tacticalMatchup = analyzeTacticalMatchup(matchData);
-                analysis.playerMatchups = analyzePlayerMatchups(matchData);
-                analysis.teamMotivation = analyzeTeamMotivation(matchData);
-            }
-
-            if (analysisDepth === 'full') {
-                analysis.detailedStats = analyzeDetailedStats(matchData);
-                analysis.historicalTrends = analyzeHistoricalTrends(matchData);
-                analysis.externalFactors = analyzeExternalFactors(matchData);
-            }
-
-            return analysis;
-        }
-
-        function selectBestBet(analysis) {
-            const allBets = [
-                { type: 'winner', ...analysis.matchWinner },
-                { type: 'goals', ...analysis.goals },
-                { type: 'btts', ...analysis.btts },
-                { type: 'corners', ...analysis.corners },
-                { type: 'cards', ...analysis.cards },
-                { type: 'firstGoal', ...analysis.firstGoal },
-                ...analysis.playerProps
-            ];
-
-            return allBets.reduce((best, current) => 
-                current.confidence > best.confidence ? current : best
-            );
-        }
-
-        function displayResults(analyzedMatches) {
-            const container = document.getElementById('matchesContainer');
-            
-            analyzedMatches
-                .sort((a, b) => b.bestBet.confidence - a.bestBet.confidence)
-                .forEach(({match, data, analysis, bestBet}) => {
-                    const card = document.createElement('div');
-                    card.className = 'match-card';
-                    
-                    const stars = '⭐'.repeat(Math.round(bestBet.confidence * 5));
-                    
-                    card.innerHTML = `
-                        <div class="match-header">
-                            <h3>${match.teams.home.name} vs ${match.teams.away.name}</h3>
-                            <div>🕒 ${new Date(match.fixture.date).toLocaleString()}</div>
-                        </div>
-                        <div class="prediction-section">
-                            <h4>Najlepszy typ (${(bestBet.confidence * 100).toFixed(1)}% ${stars})</h4>
-                            <div class="best-bet">
-                                <p>Rodzaj: ${getBetTypeDescription(bestBet.type)}</p>
-                                <p>Typ: <strong>${bestBet.prediction}</strong></p>
-                                <p>Drużyna: ${bestBet.team || 'Nie dotyczy'}</p>
-                                <p>Uzasadnienie: ${bestBet.reason}</p>
-                            </div>
-                            <div class="analysis-details">
-                                <h5>Szczegóły analizy:</h5>
-                                ${generateAnalysisDetails(analysis, data)}
-                            </div>
-                        </div>
-                    `;
-                    
-                    container.appendChild(card);
-                });
-        }
-
-        // Inicjalizacja przy załadowaniu strony
-        document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('dateSelect').valueAsDate = new Date();
-        });
-    </script>
+    // Inicjalizacja przy załadowaniu strony
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('dateSelect').valueAsDate = new Date();
+        debugLog('System zainicjalizowany');
+    });
+</script>
 </body>
 </html>
-
