@@ -81,7 +81,7 @@
             }
 
             try {
-                // Pobierz dane z API Football-Data.org
+                // Endpoint API Football-Data.org
                 const url = `https://api.football-data.org/v4/matches?dateFrom=${dateInput}&dateTo=${dateInput}`;
                 const response = await fetch(url, {
                     method: 'GET',
@@ -102,8 +102,8 @@
                     let analyzedMatches = [];
 
                     data.matches.forEach(match => {
-                        const homeTeam = match.homeTeam.name;
-                        const awayTeam = match.awayTeam.name;
+                        const homeTeam = match.homeTeam.name || "Nieznany";
+                        const awayTeam = match.awayTeam.name || "Nieznany";
 
                         matchesHTML += `
                             <div class="result">
