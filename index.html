@@ -162,15 +162,6 @@
             margin-top: 10px;
         }
 
-        .debug-info {
-            background: rgba(33, 150, 243, 0.1);
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 5px;
-            font-family: monospace;
-            font-size: 0.9em;
-        }
-
         @media (max-width: 768px) {
             .container {
                 padding: 10px;
@@ -201,6 +192,8 @@
                     <option value="140">La Liga</option>
                     <option value="135">Serie A</option>
                     <option value="78">Bundesliga</option>
+                    <option value="61">Ligue 1</option>
+                    <option value="106">Ekstraklasa</option>
                 </select>
                 <button onclick="startAnalysis()" class="btn">Analizuj</button>
             </div>
@@ -226,10 +219,6 @@
             ⌛ Trwa kompleksowa analiza meczów...
         </div>
 
-        <div id="debugInfo" class="debug-info" style="display: none;">
-            <!-- Informacje debugowania będą tutaj -->
-        </div>
-
         <div id="matchesContainer" class="match-grid">
             <!-- Tutaj będą wyświetlane analizowane mecze -->
         </div>
@@ -237,19 +226,6 @@
 <script>
     const API_KEY = 'ac0417c6e0dcfa236b146b9585892c9a';
     const API_URL = 'https://v3.football.api-sports.io';
-    const DEBUG = true;
-
-    function debugLog(message, data = null) {
-        if (DEBUG) {
-            console.log(message, data);
-            const debugInfo = document.getElementById('debugInfo');
-            debugInfo.style.display = 'block';
-            debugInfo.innerHTML += `<div>${message}</div>`;
-            if (data) {
-                debugInfo.innerHTML += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
-            }
-        }
-    }
 
     async function startAnalysis() {
         const loadingIndicator = document.getElementById('loadingIndicator');
@@ -257,27 +233,24 @@
         const systemStatus = document.getElementById('systemStatus');
         const selectedDate = document.getElementById('dateSelect').value;
         const selectedLeague = document.getElementById('leagueSelect').value;
-        const analysisDepth = document.getElementById('analysisDepth').value;
 
         try {
             loadingIndicator.style.display = 'block';
             systemStatus.textContent = 'Pobieranie danych...';
             matchesContainer.innerHTML = '';
-            debugLog('Rozpoczęcie analizy', { date: selectedDate, league: selectedLeague });
 
             const matches = await fetchMatches(selectedDate, selectedLeague);
-            debugLog('Pobrane mecze:', matches);
+            
+            if (!matches || matches.length === 0) {
+                throw new Error('Brak meczów na wybrany dzień');
+            }
 
-            systemStatus.textContent = 'Analiza danych...';
-            const analyzedMatches = await analyzeMatches(matches, analysisDepth);
-            debugLog('Przeanalizowane mecze:', analyzedMatches);
-
+            const analyzedMatches = await analyzeAllMatches(matches);
             displayResults(analyzedMatches);
             systemStatus.textContent = 'Analiza zakończona';
 
         } catch (error) {
             console.error('Error:', error);
-            debugLog('Błąd:', error.message);
             matchesContainer.innerHTML = `
                 <div class="error-message">
                     <p>⚠️ Wystąpił błąd podczas analizy</p>
@@ -291,14 +264,11 @@
 
     async function fetchMatches(date, league) {
         const formattedDate = new Date(date).toISOString().split('T')[0];
-        let url = new URL(`${API_URL}/fixtures`);
-        url.searchParams.append('date', formattedDate);
+        let url = `${API_URL}/fixtures?date=${formattedDate}`;
         
         if (league !== 'all') {
-            url.searchParams.append('league', league);
+            url += `&league=${league}`;
         }
-
-        debugLog('Wysyłanie zapytania do API:', url.toString());
 
         const response = await fetch(url, {
             method: 'GET',
@@ -309,141 +279,150 @@
         });
 
         if (!response.ok) {
-            throw new Error(`Błąd API (${response.status}): ${response.statusText}`);
+            throw new Error(`Błąd API (${response.status})`);
         }
 
         const data = await response.json();
-        debugLog('Odpowiedź API:', data);
-
-        if (!data.response || data.response.length === 0) {
-            throw new Error('Brak dostępnych meczów na wybrany dzień. Wybierz inną datę.');
-        }
-
         return data.response;
     }
 
-    async function analyzeMatches(matches, analysisDepth) {
+    async function analyzeAllMatches(matches) {
         return Promise.all(matches.map(async match => {
-            try {
-                const matchData = await fetchMatchData(match.fixture.id);
-                const analysis = await performAnalysis(match, matchData, analysisDepth);
-                
-                return {
-                    match: match,
-                    data: matchData,
-                    analysis: analysis,
-                    bestBet: findBestBet(analysis)
-                };
-            } catch (error) {
-                debugLog(`Błąd analizy meczu ${match.fixture.id}:`, error);
-                return null;
-            }
-        })).then(results => results.filter(result => result !== null));
+            const analysis = await analyzeMatch(match);
+            return {
+                match: match,
+                analysis: analysis,
+                predictions: generatePredictions(analysis)
+            };
+        }));
     }
 
-    async function fetchMatchData(fixtureId) {
-        const endpoints = [
-            `fixtures/statistics?fixture=${fixtureId}`,
-            `fixtures/events?fixture=${fixtureId}`,
-            `fixtures/lineups?fixture=${fixtureId}`,
-            `fixtures/players?fixture=${fixtureId}`
-        ];
-
-        const results = await Promise.all(endpoints.map(endpoint => 
-            fetch(`${API_URL}/${endpoint}`, {
-                headers: {
-                    'x-rapidapi-host': 'v3.football.api-sports.io',
-                    'x-rapidapi-key': API_KEY
-                }
-            }).then(res => res.json())
-        ));
+    async function analyzeMatch(match) {
+        const [stats, h2h] = await Promise.all([
+            fetchMatchStats(match.fixture.id),
+            fetchH2H(match.teams.home.id, match.teams.away.id)
+        ]);
 
         return {
-            statistics: results[0].response,
-            events: results[1].response,
-            lineups: results[2].response,
-            players: results[3].response
+            stats: stats,
+            h2h: h2h,
+            teamStrength: calculateTeamStrength(stats, h2h),
+            form: analyzeTeamForm(stats, h2h),
+            tactics: analyzeTactics(stats)
         };
     }
 
-    async function performAnalysis(match, matchData, analysisDepth) {
-        const analysis = {
-            basic: analyzeBasicFactors(match, matchData),
-            form: analyzeTeamForm(matchData),
-            players: analyzePlayerPerformance(matchData),
-            tactics: analyzeTacticalSetup(matchData)
+    function generatePredictions(analysis) {
+        return {
+            winner: predictWinner(analysis),
+            goals: predictGoals(analysis),
+            btts: predictBTTS(analysis),
+            corners: predictCorners(analysis),
+            cards: predictCards(analysis)
         };
-
-        if (analysisDepth === 'advanced' || analysisDepth === 'full') {
-            analysis.advanced = await analyzeAdvancedFactors(match, matchData);
-        }
-
-        if (analysisDepth === 'full') {
-            analysis.detailed = await analyzeDetailedFactors(match, matchData);
-        }
-
-        return analysis;
     }
 
-    function findBestBet(analysis) {
-        const predictions = [
-            { type: 'winner', ...predictMatchWinner(analysis) },
-            { type: 'goals', ...predictGoals(analysis) },
-            { type: 'btts', ...predictBTTS(analysis) },
-            { type: 'corners', ...predictCorners(analysis) },
-            { type: 'cards', ...predictCards(analysis) }
-        ];
+    function predictWinner(analysis) {
+        const homeStrength = analysis.teamStrength.home;
+        const awayStrength = analysis.teamStrength.away;
+        
+        if (homeStrength > awayStrength * 1.2) {
+            return {
+                prediction: '1',
+                confidence: 0.8,
+                reason: 'Znacząca przewaga gospodarzy'
+            };
+        } else if (awayStrength > homeStrength * 1.2) {
+            return {
+                prediction: '2',
+                confidence: 0.8,
+                reason: 'Znacząca przewaga gości'
+            };
+        } else {
+            return {
+                prediction: 'X',
+                confidence: 0.6,
+                reason: 'Wyrównane szanse obu drużyn'
+            };
+        }
+    }
 
-        return predictions.reduce((best, current) => 
-            current.confidence > best.confidence ? current : best
-        );
+    function predictGoals(analysis) {
+        const avgGoals = (analysis.form.homeGoals + analysis.form.awayGoals) / 2;
+        return {
+            prediction: avgGoals > 2.5 ? 'Powyżej 2.5' : 'Poniżej 2.5',
+            confidence: 0.7,
+            reason: `Średnia bramek: ${avgGoals.toFixed(1)}`
+        };
+    }
+
+    function predictBTTS(analysis) {
+        const bttsChance = analysis.form.bttsPercentage;
+        return {
+            prediction: bttsChance > 60 ? 'Tak' : 'Nie',
+            confidence: bttsChance / 100,
+            reason: `${bttsChance}% meczów z bramkami obu drużyn`
+        };
     }
 
     function displayResults(analyzedMatches) {
         const container = document.getElementById('matchesContainer');
         
-        analyzedMatches
-            .sort((a, b) => b.analysis.confidence - a.analysis.confidence)
-            .forEach(({match, data, analysis, bestBet}) => {
-                const card = document.createElement('div');
-                card.className = 'match-card';
-                
-                const confidence = (bestBet.confidence * 100).toFixed(1);
-                const stars = '⭐'.repeat(Math.round(bestBet.confidence * 5));
-                
-                card.innerHTML = `
-                    <div class="match-header">
-                        <h3>${match.teams.home.name} vs ${match.teams.away.name}</h3>
-                        <div>🕒 ${new Date(match.fixture.date).toLocaleString()}</div>
+        analyzedMatches.forEach(({match, analysis, predictions}) => {
+            const card = document.createElement('div');
+            card.className = 'match-card';
+            
+            const bestBet = findBestBet(predictions);
+            const confidence = (bestBet.confidence * 100).toFixed(1);
+            const stars = '⭐'.repeat(Math.round(bestBet.confidence * 5));
+            
+            card.innerHTML = `
+                <div class="match-header">
+                    <h3>${match.teams.home.name} vs ${match.teams.away.name}</h3>
+                    <div>🕒 ${new Date(match.fixture.date).toLocaleString()}</div>
+                </div>
+                <div class="prediction-section">
+                    <h4>Najlepszy typ (${confidence}% ${stars})</h4>
+                    <div class="best-bet">
+                        <p>Typ: <strong>${bestBet.prediction}</strong></p>
+                        <p>Uzasadnienie: ${bestBet.reason}</p>
                     </div>
-                    <div class="prediction-section">
-                        <h4>Najlepszy typ (${confidence}% ${stars})</h4>
-                        <div class="best-bet">
-                            <p>Typ: <strong>${bestBet.prediction}</strong></p>
-                            <p>Uzasadnienie: ${bestBet.reason}</p>
-                        </div>
-                        <div class="analysis-details">
-                            <h5>Szczegóły analizy:</h5>
-                            <div class="team-stats">
-                                <div class="stat-item">
-                                    <strong>Forma gospodarzy:</strong> ${analysis.form.home}
-                                </div>
-                                <div class="stat-item">
-                                    <strong>Forma gości:</strong> ${analysis.form.away}
-                                </div>
+                    <div class="analysis-details">
+                        <h5>Inne typy:</h5>
+                        <div class="team-stats">
+                            <div class="stat-item">
+                                <p>Bramki: ${predictions.goals.prediction}</p>
+                                <p>BTTS: ${predictions.btts.prediction}</p>
+                            </div>
+                            <div class="stat-item">
+                                <p>Zwycięzca: ${predictions.winner.prediction}</p>
+                                <p>Forma gospodarzy: ${analysis.form.homeForm}/10</p>
+                                <p>Forma gości: ${analysis.form.awayForm}/10</p>
                             </div>
                         </div>
                     </div>
-                `;
-                
-                container.appendChild(card);
-            });
+                </div>
+            `;
+            
+            container.appendChild(card);
+        });
+    }
+
+    function findBestBet(predictions) {
+        const allBets = [
+            predictions.winner,
+            predictions.goals,
+            predictions.btts
+        ];
+
+        return allBets.reduce((best, current) => 
+            current.confidence > best.confidence ? current : best
+        );
     }
 
     // Inicjalizacja przy załadowaniu strony
     document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('dateSelect').valueAsDate = new Date();
-        debugLog('System zainicjalizowany');
     });
 </script>
 </body>
