@@ -577,7 +577,12 @@
                 console.error(`B艂膮d analizy meczu ${match.fixture.id}:`, error);
                 return null;
             }
-        })).then(results => results.filter(result => result !== null));
+        }))
+    .then(results => results
+        .filter(result => calculateOverallConfidence(result.predictions) >= 0.6) // Filtr minimum skuteczno艣ci
+        .sort((a, b) => calculateOverallConfidence(b.predictions) - calculateOverallConfidence(a.predictions)) // Sortowanie
+    );
+    
     }
 
     function analyzeMatchData(match, matchData, analysisDepth) {
@@ -688,7 +693,54 @@
         };
     }
 
+    
     function displayResults(analyzedMatches) {
+        const container = document.getElementById('matchesContainer');
+
+        // Sortowanie mecz贸w wed艂ug najwy偶szej skuteczno艣ci (confidence)
+        analyzedMatches.sort((a, b) => 
+            calculateOverallConfidence(b.predictions) - calculateOverallConfidence(a.predictions)
+        );
+
+        analyzedMatches.forEach(({ match, predictions }) => {
+            const card = document.createElement('div');
+            card.className = 'match-card';
+
+            const predictionsList = predictions
+                .map((pred, index) => {
+                    const confidence = (pred.confidence * 100).toFixed(1);
+                    const stars = '猸�'.repeat(Math.round(pred.confidence * 5));
+                    return `
+                        <div class="best-bet">
+                            <h4>#${index + 1} ${pred.type}</h4>
+                            <p>Typ: <strong>${pred.prediction}</strong></p>
+                            <p>Pewno艣膰: ${confidence}% ${stars}</p>
+                            <p>Uzasadnienie: ${pred.reason}</p>
+                            <div class="confidence-meter">
+                                <div class="confidence-value" style="width: ${confidence}%"></div>
+                            </div>
+                            ${pred.improvedByMemory ? '<p class="memory-improved">鉁� Ulepszone przez system uczenia</p>' : ''}
+                        </div>`;
+                })
+                .join('');
+
+            card.innerHTML = `
+                <div class="match-header">
+                    <h3>${match.teams.home.name} vs ${match.teams.away.name}</h3>
+                    <div>馃晵 ${new Date(match.fixture.date).toLocaleString()}</div>
+                </div>
+                <div class="prediction-section">
+                    <h4>Top 7 typ贸w na ten mecz:</h4>
+                    ${predictionsList}
+                </div>
+            `;
+
+            container.appendChild(card);
+        });
+
+        updateAccuracyDisplay();
+    }
+    
         const container = document.getElementById('matchesContainer');
         
         analyzedMatches.forEach(({match, predictions}) => {
