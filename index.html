@@ -161,19 +161,22 @@
         // Funkcja do przekształcenia daty z formatu YYYY-MM-DD na DD-MM-YYYY
         function formatDateToAPI(date) {
             const [year, month, day] = date.split('-');
-            return `${day}-${month}-${year}`;
+            return `${year}-${month}-${day}`;  // Poprawiony format daty
         }
 
         // Pobieranie danych o meczach
         async function fetchMatches(date, league) {
             const url = new URL(`${API_URL}/fixtures`);
-            url.searchParams.append('date', date);
+            url.searchParams.append('date', date);  // Data w formacie YYYY-MM-DD
             url.searchParams.append('season', '2024');
-            url.searchParams.append('timezone', 'Europe/Warsaw');
+            url.searchParams.append('timezone', 'Europe/Warsaw');  // Ustawiamy strefę czasową
 
             if (league !== 'all') {
-                url.searchParams.append('league', league);
+                url.searchParams.append('league', league);  // Dodajemy ID ligi, jeśli wybrano inną
             }
+
+            // Logowanie zapytania, aby upewnić się, że wszystko jest poprawnie skonstruowane
+            console.log('URL:', url.toString());
 
             const response = await fetch(url, {
                 method: 'GET',
@@ -189,6 +192,9 @@
             }
 
             const data = await response.json();
+
+            // Logowanie odpowiedzi z API, aby sprawdzić, co zwraca
+            console.log('API Response:', data);
 
             if (!data.response || data.response.length === 0) {
                 console.warn('Brak danych o meczach dla wybranej daty.');
@@ -273,6 +279,7 @@
             const selectedDate = document.getElementById('dateSelect').value;
             const selectedLeague = document.getElementById('leagueSelect').value;
 
+            // Formatowanie daty do API
             const formattedDate = formatDateToAPI(selectedDate);
 
             try {
@@ -280,6 +287,7 @@
                 systemStatus.textContent = 'Pobieranie danych...';
                 matchesContainer.innerHTML = '';
 
+                // Pobieranie meczów z API
                 const matches = await fetchMatches(formattedDate, selectedLeague);
 
                 if (!matches || matches.length === 0) {
@@ -296,27 +304,4 @@
 
                 if (!analyzedMatches || analyzedMatches.length === 0) {
                     matchesContainer.innerHTML = `
-                        <div class="error-message">
-                            <p>⚠️ Nie udało się przeprowadzić analizy meczów.</p>
-                        </div>`;
-                    systemStatus.textContent = 'Analiza nie powiodła się.';
-                    return;
-                }
-
-                displayResults(analyzedMatches);
-                systemStatus.textContent = 'Analiza zakończona.';
-            } catch (error) {
-                console.error('Błąd podczas analizy:', error);
-                matchesContainer.innerHTML = `
-                    <div class="error-message">
-                        <p>⚠️ Wystąpił błąd podczas analizy meczów.</p>
-                        <p>${error.message}</p>
-                    </div>`;
-                systemStatus.textContent = 'Wystąpił błąd.';
-            } finally {
-                loadingIndicator.style.display = 'none';
-            }
-        }
-    </script>
-</body>
-</html>
+                        <
