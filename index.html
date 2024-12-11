@@ -4,9 +4,126 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Zaawansowany System Analizy Meczów i Value Betów</title>
-    <!-- Poprzednie style CSS pozostają bez zmian -->
     <style>
-        /* Dodatkowe style dla nowych elementów */
+        :root {
+            --primary-color: #2196F3;
+            --success-color: #4CAF50;
+            --warning-color: #FF9800;
+            --danger-color: #F44336;
+            --dark-bg: #1a1a1a;
+            --card-bg: #2d2d2d;
+            --text-color: #ffffff;
+        }
+
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--dark-bg);
+            color: var(--text-color);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: var(--card-bg);
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            margin: 0;
+            color: var(--primary-color);
+            font-size: 2.5em;
+        }
+
+        .control-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .control-card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .match-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .match-card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .match-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s ease;
+            background-color: var(--primary-color);
+            color: white;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .btn:hover {
+            background-color: #1976D2;
+        }
+
+        .btn:disabled {
+            background-color: #666;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: var(--warning-color);
+        }
+
+        .error-message {
+            background: rgba(244, 67, 54, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        select, input {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 5px;
+            background: rgba(255,255,255,0.1);
+            color: var(--text-color);
+        }
+
         .analysis-factors {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -21,11 +138,6 @@
             text-align: left;
         }
 
-        .factor-score {
-            font-weight: bold;
-            color: var(--success-color);
-        }
-
         .prediction-confidence {
             font-size: 1.2em;
             margin: 10px 0;
@@ -34,56 +146,23 @@
             border-radius: 5px;
         }
 
-        .market-analysis {
-            margin-top: 15px;
-            padding: 10px;
-            background: rgba(33, 150, 243, 0.05);
-            border-radius: 5px;
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            .header h1 {
+                font-size: 2em;
+            }
+            .match-grid {
+                grid-template-columns: 1fr;
+            }
         }
-
-        .market-item {
-            margin: 5px 0;
-            padding: 5px;
-            border-left: 3px solid var(--primary-color);
-        }
-
-        .weather-info {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin: 10px 0;
-        }
-
-        .player-stats {
-            margin: 10px 0;
-        }
-
-        .team-form {
-            display: flex;
-            gap: 5px;
-            margin: 5px 0;
-        }
-
-        .form-indicator {
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.8em;
-        }
-
-        .win { background-color: var(--success-color); }
-        .draw { background-color: var(--warning-color); }
-        .loss { background-color: var(--danger-color); }
     </style>
 </head>
 <body>
-    <!-- Poprzednia struktura HTML pozostaje, dodajemy nowe elementy -->
     <div class="container">
         <header class="header">
-            <h1>🎯 Zaawansowany System Analizy Meczów</h1>
+            <h1>🎯 System Analizy Meczów i Value Betów</h1>
         </header>
 
         <div class="control-panel">
@@ -97,7 +176,7 @@
                 </select>
                 <button onclick="analyzeMatches()" class="btn">Analizuj</button>
             </div>
-
+            
             <div class="control-card">
                 <h2>⚙️ Filtry analizy</h2>
                 <select id="analysisDepth" class="select-input">
@@ -105,33 +184,18 @@
                     <option value="advanced">Zaawansowana analiza</option>
                     <option value="full">Pełna analiza</option>
                 </select>
-                <select id="marketType" class="select-input">
-                    <option value="all">Wszystkie rynki</option>
-                    <option value="1x2">1X2</option>
-                    <option value="goals">Gole</option>
-                    <option value="cards">Kartki</option>
-                    <option value="corners">Rzuty rożne</option>
-                    <option value="specials">Specjalne</option>
-                </select>
             </div>
 
             <div class="control-card">
-                <h2>📊 Statystyki systemu</h2>
-                <div id="systemStats" class="stats-container">
-                    <div class="stat-item">
-                        <div>Skuteczność</div>
-                        <div id="successRate">0%</div>
-                    </div>
-                    <div class="stat-item">
-                        <div>ROI</div>
-                        <div id="roiValue">0%</div>
-                    </div>
+                <h2>📊 Status systemu</h2>
+                <div id="systemStatus" class="status-container">
+                    Sprawdzanie połączenia...
                 </div>
             </div>
         </div>
 
         <div id="loadingIndicator" class="loading" style="display: none;">
-            ⌛ Trwa zaawansowana analiza meczów...
+            ⌛ Trwa analiza meczów...
         </div>
 
         <div id="matchesContainer" class="match-grid">
@@ -140,128 +204,26 @@
     </div>
 
     <script>
-        class AdvancedMatchAnalyzer {
-            constructor() {
-                this.API_KEY = '631900acd2063f2fa684e2257dfa5588';
-                this.BETCLIC_MARKETS = [
-                    '1X2', 'Over/Under', 'Both Teams to Score',
-                    'First Goal Time', 'Player Shots', 'Cards',
-                    'Corners', 'Player Goals', 'Exact Score'
-                ];
-                this.weatherAPI = 'YOUR_WEATHER_API_KEY';
-                this.statsAPI = 'YOUR_STATS_API_KEY';
+        const API_KEY = '631900acd2063f2fa684e2257dfa5588';
+        const API_BASE_URL = 'https://api.the-odds-api.com/v4/sports';
+
+        async function fetchMatches(selectedDate, selectedSport) {
+            const response = await fetch(
+                `${API_BASE_URL}/${selectedSport}/odds/?apiKey=${API_KEY}&regions=eu&markets=h2h,totals`
+            );
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
-
-            async analyzeMatch(match) {
-                const analysis = {
-                    basic: await this.getBasicAnalysis(match),
-                    advanced: await this.getAdvancedAnalysis(match),
-                    weather: await this.getWeatherAnalysis(match),
-                    players: await this.getPlayerAnalysis(match),
-                    historical: await this.getHistoricalAnalysis(match),
-                    valueBets: await this.findValueBets(match),
-                    trapBets: await this.detectTrapBets(match)
-                };
-
-                return this.calculateFinalPrediction(analysis);
-            }
-
-            async getBasicAnalysis(match) {
-                // Implementacja podstawowej analizy
-                return {
-                    homeForm: this.calculateTeamForm(match.home_team),
-                    awayForm: this.calculateTeamForm(match.away_team),
-                    h2h: await this.getH2HResults(match),
-                    recentResults: this.getRecentResults(match)
-                };
-            }
-
-            async getAdvancedAnalysis(match) {
-                // Implementacja zaawansowanej analizy
-                return {
-                    expectedGoals: this.calculateExpectedGoals(match),
-                    teamStrength: this.calculateTeamStrength(match),
-                    playerAvailability: await this.checkPlayerAvailability(match),
-                    tacticalAnalysis: this.analyzeTactics(match)
-                };
-            }
-
-            async getWeatherAnalysis(match) {
-                // Implementacja analizy pogody
-                const weather = await this.fetchWeatherData(match);
-                return this.analyzeWeatherImpact(weather, match);
-            }
-
-            async getPlayerAnalysis(match) {
-                // Implementacja analizy zawodników
-                return {
-                    keyPlayers: await this.analyzeKeyPlayers(match),
-                    injuries: await this.checkInjuries(match),
-                    form: await this.getPlayerForm(match)
-                };
-            }
-
-            calculateConfidenceScore(analysis) {
-                // Implementacja obliczania pewności typu
-                let score = 0;
-                const weights = {
-                    basic: 0.3,
-                    advanced: 0.3,
-                    weather: 0.1,
-                    players: 0.2,
-                    historical: 0.1
-                };
-
-                // Obliczanie ważonego wyniku
-                score += analysis.basic.confidence * weights.basic;
-                score += analysis.advanced.confidence * weights.advanced;
-                score += analysis.weather.impact * weights.weather;
-                score += analysis.players.confidence * weights.players;
-                score += analysis.historical.confidence * weights.historical;
-
-                return score;
-            }
-
-            async findValueBets(match) {
-                // Implementacja wyszukiwania value betów
-                const marketOdds = await this.fetchMarketOdds(match);
-                const valueOpportunities = [];
-
-                for (const market of this.BETCLIC_MARKETS) {
-                    const value = this.calculateValueBet(market, marketOdds);
-                    if (value.exists) {
-                        valueOpportunities.push(value);
-                    }
-                }
-
-                return valueOpportunities;
-            }
-
-            detectTrapBets(match) {
-                // Implementacja wykrywania pułapek bukmacherskich
-                return {
-                    suspiciousOdds: this.findSuspiciousOdds(match),
-                    oddMovements: this.analyzeOddMovements(match),
-                    marketDistortions: this.findMarketDistortions(match)
-                };
-            }
-
-            calculateFinalPrediction(analysis) {
-                // Implementacja końcowej predykcji
-                const confidence = this.calculateConfidenceScore(analysis);
-                const bestBets = this.selectBestBets(analysis.valueBets, confidence);
-
-                return {
-                    confidence,
-                    bestBets,
-                    analysis,
-                    warnings: analysis.trapBets
-                };
-            }
+            
+            const matches = await response.json();
+            
+            return matches.filter(match => {
+                const matchDate = new Date(match.commence_time).toDateString();
+                const selected = new Date(selectedDate).toDateString();
+                return matchDate === selected;
+            });
         }
-
-        // Inicjalizacja i obsługa interfejsu
-        const analyzer = new AdvancedMatchAnalyzer();
 
         async function analyzeMatches() {
             const loadingIndicator = document.getElementById('loadingIndicator');
@@ -270,25 +232,22 @@
             const selectedSport = document.getElementById('sportFilter').value;
             const analysisDepth = document.getElementById('analysisDepth').value;
 
+            loadingIndicator.style.display = 'block';
+            matchesContainer.innerHTML = '';
+
             try {
-                loadingIndicator.style.display = 'block';
-                matchesContainer.innerHTML = '';
-
                 const matches = await fetchMatches(selectedDate, selectedSport);
-                const analysisResults = [];
-
-                for (const match of matches) {
-                    const analysis = await analyzer.analyzeMatch(match);
-                    analysisResults.push({ match, analysis });
+                
+                if (matches.length === 0) {
+                    matchesContainer.innerHTML = `
+                        <div class="error-message">
+                            <p>Brak dostępnych meczów na wybrany dzień.</p>
+                        </div>`;
+                    return;
                 }
 
-                // Sortowanie po pewności i wybranie najlepszych typów
-                const bestPicks = analysisResults
-                    .sort((a, b) => b.analysis.confidence - a.analysis.confidence)
-                    .slice(0, 5);
-
-                displayResults(bestPicks);
-                updateSystemStats(analysisResults);
+                const analyzedMatches = await analyzeMatchData(matches, analysisDepth);
+                displayAnalyzedMatches(analyzedMatches);
 
             } catch (error) {
                 console.error('Error:', error);
@@ -302,22 +261,123 @@
             }
         }
 
-        function displayResults(results) {
-            const container = document.getElementById('matchesContainer');
-            
-            results.forEach(({ match, analysis }) => {
-                const matchCard = createMatchCard(match, analysis);
-                container.appendChild(matchCard);
+        async function analyzeMatchData(matches, analysisDepth) {
+            return matches.map(match => {
+                const analysis = {
+                    basic: analyzeBasicFactors(match),
+                    odds: analyzeOdds(match),
+                    confidence: calculateConfidence(match)
+                };
+
+                if (analysisDepth === 'advanced' || analysisDepth === 'full') {
+                    analysis.advanced = analyzeAdvancedFactors(match);
+                }
+
+                if (analysisDepth === 'full') {
+                    analysis.valueBets = findValueBets(match);
+                    analysis.warnings = detectBookmakerTraps(match);
+                }
+
+                return {
+                    match: match,
+                    analysis: analysis
+                };
             });
         }
 
-        function createMatchCard(match, analysis) {
-            const card = document.createElement('div');
-            card.className = 'match-card';
+        function analyzeBasicFactors(match) {
+            return {
+                homeTeamStrength: calculateTeamStrength(match.home_team),
+                awayTeamStrength: calculateTeamStrength(match.away_team),
+                recentForm: analyzeRecentForm(match)
+            };
+        }
+
+        function analyzeOdds(match) {
+            const bookmakerOdds = match.bookmakers?.[0]?.markets?.[0]?.outcomes || [];
+            return {
+                homeOdds: bookmakerOdds.find(o => o.name === match.home_team)?.price || 0,
+                awayOdds: bookmakerOdds.find(o => o.name === match.away_team)?.price || 0,
+                margin: calculateBookmakerMargin(bookmakerOdds)
+            };
+        }
+
+        function calculateConfidence(match) {
+            const odds = analyzeOdds(match);
+            const basicFactors = analyzeBasicFactors(match);
             
-            // Implementacja tworzenia karty meczu z wszystkimi analizami
+            // Przykładowy algorytm obliczania pewności
+            let confidence = 0.5; // Bazowa pewność
             
-            return card;
+            // Modyfikacja na podstawie kursów
+            if (odds.homeOdds < 2.0 || odds.awayOdds < 2.0) {
+                confidence += 0.2;
+            }
+            
+            // Modyfikacja na podstawie formy drużyn
+            if (basicFactors.recentForm > 0.6) {
+                confidence += 0.3;
+            }
+            
+            return Math.min(confidence, 1);
+        }
+
+        function calculateTeamStrength(team) {
+            // Tutaj można dodać rzeczywiste obliczenia siły drużyny
+            return Math.random() * 0.5 + 0.5;
+        }
+
+        function analyzeRecentForm(match) {
+            // Tutaj można dodać rzeczywistą analizę ostatnich wyników
+            return Math.random() * 0.5 + 0.5;
+        }
+
+        function calculateBookmakerMargin(odds) {
+            if (!odds.length) return 0;
+            const impliedProbabilities = odds.map(odd => 1 / odd.price);
+            return Math.sum(impliedProbabilities) - 1;
+        }
+
+        function displayAnalyzedMatches(analyzedMatches) {
+            const container = document.getElementById('matchesContainer');
+            
+            // Sortowanie po pewności
+            analyzedMatches.sort((a, b) => b.analysis.confidence - a.analysis.confidence);
+            
+            // Wyświetlanie tylko top 5 najlepszych typów
+            analyzedMatches.slice(0, 5).forEach(({ match, analysis }) => {
+                const card = document.createElement('div');
+                card.className = 'match-card';
+                
+                const confidence = (analysis.confidence * 100).toFixed(1);
+                const stars = '⭐'.repeat(Math.round(analysis.confidence * 5));
+                
+                card.innerHTML = `
+                    <div class="match-header">
+                        <h3>${match.home_team} vs ${match.away_team}</h3>
+                        <div class="match-time">🕒 ${new Date(match.commence_time).toLocaleString()}</div>
+                    </div>
+                    <div class="prediction-confidence">
+                        Pewność: ${confidence}% ${stars}
+                    </div>
+                    <div class="analysis-factors">
+                        <div class="factor-card">
+                            <h4>📊 Analiza podstawowa</h4>
+                            <p>Siła gospodarzy: ${(analysis.basic.homeTeamStrength * 100).toFixed(1)}%</p>
+                            <p>Siła gości: ${(analysis.basic.awayTeamStrength * 100).toFixed(1)}%</p>
+                            <p>Forma: ${(analysis.basic.recentForm * 100).toFixed(1)}%</p>
+                        </div>
+                        <div class="factor-card">
+                            <h4>💰 Analiza kursów</h4>
+                            <p>Kurs 1: ${analysis.odds.homeOdds.toFixed(2)}</p>
+                            <p>Kurs 2: ${analysis.odds.awayOdds.toFixed(2)}</p>
+                            <p>Marża: ${(analysis.odds.margin * 100).toFixed(1)}%</p>
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(card);
+            });
         }
 
         // Inicjalizacja przy załadowaniu strony
