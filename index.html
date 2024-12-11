@@ -64,7 +64,7 @@
     </div>
 
     <script>
-        const API_KEY = 'c13c38ce363b4994afaa6608c9fc80e2';
+        const API_KEY = 'ac0417c6e0dcfa236b146b9585892c9a';
 
         async function fetchAndAnalyzeMatches() {
             const dateInput = document.getElementById('date').value.trim();
@@ -72,7 +72,7 @@
             const summaryDiv = document.getElementById('summary');
 
             // Wyczyść poprzednie wyniki
-            resultsDiv.innerHTML = 'Ładowanie danych z API...';
+            resultsDiv.innerHTML = 'Ładowanie danych z API-Football...';
             summaryDiv.innerHTML = '';
 
             if (!dateInput) {
@@ -81,12 +81,13 @@
             }
 
             try {
-                // Endpoint API Football-Data.org
-                const url = `https://api.football-data.org/v4/matches?dateFrom=${dateInput}&dateTo=${dateInput}`;
+                // Endpoint API-Football
+                const url = `https://v3.football.api-sports.io/fixtures?date=${dateInput}`;
                 const response = await fetch(url, {
                     method: 'GET',
                     headers: {
-                        'X-Auth-Token': API_KEY
+                        'x-rapidapi-key': API_KEY,
+                        'x-rapidapi-host': 'v3.football.api-sports.io'
                     }
                 });
 
@@ -97,15 +98,15 @@
                 const data = await response.json();
 
                 // Sprawdź, czy są dostępne mecze
-                if (data.matches && data.matches.length > 0) {
+                if (data.response && data.response.length > 0) {
                     let matchesHTML = '';
                     let analyzedMatches = [];
 
-                    data.matches.forEach(match => {
-                        const homeTeam = match.homeTeam.name || "Nieznany";
-                        const awayTeam = match.awayTeam.name || "Nieznany";
-                        const matchTime = new Date(match.utcDate).toLocaleString();
-                        const status = match.status;
+                    data.response.forEach(match => {
+                        const homeTeam = match.teams.home.name || "Nieznany";
+                        const awayTeam = match.teams.away.name || "Nieznany";
+                        const matchTime = new Date(match.fixture.date).toLocaleString();
+                        const status = match.fixture.status.short;
 
                         matchesHTML += `
                             <div class="result">
@@ -120,7 +121,7 @@
                             homeTeam,
                             awayTeam,
                             status,
-                            utcDate: match.utcDate
+                            utcDate: match.fixture.date
                         });
                     });
 
@@ -133,7 +134,7 @@
                 }
                 
             } catch (error) {
-                resultsDiv.innerHTML = `Błąd podczas ładowania danych z API: ${error.message}`;
+                resultsDiv.innerHTML = `Błąd podczas ładowania danych z API-Football: ${error.message}`;
                 console.error(error); // Wyświetl szczegóły błędu w konsoli
             }
         }
