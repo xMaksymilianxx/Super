@@ -119,12 +119,6 @@
             color: var(--text-color);
         }
 
-        .date-warning {
-            color: var(--warning-color);
-            font-size: 0.9em;
-            margin-top: 5px;
-        }
-
         @media (max-width: 768px) {
             .container {
                 padding: 10px;
@@ -148,8 +142,7 @@
             <div class="control-card">
                 <h2>📅 Wybór daty</h2>
                 <input type="date" id="dateSelect" class="date-input">
-                <div id="dateWarning" class="date-warning"></div>
-                <button onclick="startAnalysis()" class="btn">Analizuj</button>
+                <button onclick="analyzeMatches()" class="btn">Analizuj</button>
             </div>
             
             <div class="control-card">
@@ -170,37 +163,10 @@
     </div>
 
     <script>
-        const API_FOOTBALL_KEY = 'YOUR_API_FOOTBALL_KEY';
-        const API_FOOTBALL_URL = 'https://v3.football.api-sports.io';
+        const API_KEY = 'ac0417c6e0dcfa236b146b9585892c9a';
+        const API_URL = 'https://v3.football.api-sports.io';
 
-        // Inicjalizacja i ograniczenia daty
-        function initializeDatePicker() {
-            const dateInput = document.getElementById('dateSelect');
-            const dateWarning = document.getElementById('dateWarning');
-            
-            // Ustawienie zakresu dat
-            const today = new Date();
-            const minDate = new Date();
-            minDate.setDate(today.getDate() - 7); // Tydzień wstecz
-            const maxDate = new Date();
-            maxDate.setDate(today.getDate() + 7); // Tydzień do przodu
-
-            dateInput.min = minDate.toISOString().split('T')[0];
-            dateInput.max = maxDate.toISOString().split('T')[0];
-            dateInput.valueAsDate = today;
-
-            dateInput.addEventListener('change', (e) => {
-                const selectedDate = new Date(e.target.value);
-                if (selectedDate > maxDate || selectedDate < minDate) {
-                    dateWarning.textContent = 'Wybierz datę z dozwolonego zakresu (±7 dni od dziś)';
-                    e.target.valueAsDate = today;
-                } else {
-                    dateWarning.textContent = '';
-                }
-            });
-        }
-
-        async function startAnalysis() {
+        async function analyzeMatches() {
             const loadingIndicator = document.getElementById('loadingIndicator');
             const matchesContainer = document.getElementById('matchesContainer');
             const systemStatus = document.getElementById('systemStatus');
@@ -211,14 +177,15 @@
                 systemStatus.textContent = 'Pobieranie danych...';
                 matchesContainer.innerHTML = '';
 
+                console.log('Próba pobrania meczów dla daty:', selectedDate);
                 const matches = await fetchMatches(selectedDate);
-                
-                if (!matches || matches.length === 0) {
-                    throw new Error('Brak dostępnych meczów na wybrany dzień. Wybierz inną datę.');
+                console.log('Pobrane mecze:', matches);
+
+                if (matches.length === 0) {
+                    throw new Error('Brak meczów na wybrany dzień');
                 }
 
-                systemStatus.textContent = 'Analizowanie meczów...';
-                const analyzedMatches = await analyzeMatches(matches);
+                const analyzedMatches = await analyzeMatchData(matches);
                 displayResults(analyzedMatches);
                 systemStatus.textContent = 'Analiza zakończona';
 
@@ -226,7 +193,8 @@
                 console.error('Error:', error);
                 matchesContainer.innerHTML = `
                     <div class="error-message">
-                        <p>⚠️ ${error.message}</p>
+                        <p>⚠️ Wystąpił błąd podczas analizy</p>
+                        <p>Szczegóły: ${error.message}</p>
                     </div>`;
                 systemStatus.textContent = 'Wystąpił błąd';
             } finally {
@@ -236,29 +204,48 @@
 
         async function fetchMatches(date) {
             const formattedDate = new Date(date).toISOString().split('T')[0];
-            const response = await fetch(`${API_FOOTBALL_URL}/fixtures/date/${formattedDate}`, {
-                headers: {
-                    'x-rapidapi-host': 'v3.football.api-sports.io',
-                    'x-rapidapi-key': API_FOOTBALL_KEY
+            console.log('Wysyłanie zapytania do API dla daty:', formattedDate);
+
+            try {
+                const response = await fetch(`${API_URL}/fixtures?date=${formattedDate}`, {
+                    method: 'GET',
+                    headers: {
+                        'x-rapidapi-host': 'v3.football.api-sports.io',
+                        'x-rapidapi-key': API_KEY
+                    }
+                });
+
+                console.log('Status odpowiedzi:', response.status);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
-            });
 
-            if (!response.ok) {
-                throw new Error(`Błąd pobierania danych (${response.status})`);
+                const data = await response.json();
+                console.log('Otrzymane dane:', data);
+
+                if (!data.response || data.response.length === 0) {
+                    throw new Error('Brak dostępnych meczów na wybrany dzień');
+                }
+
+                return data.response;
+            } catch (error) {
+                console.error('Błąd podczas pobierania danych:', error);
+                throw error;
             }
-
-            const data = await response.json();
-            return data.response;
         }
 
-        async function analyzeMatches(matches) {
+        async function analyzeMatchData(matches) {
             return Promise.all(matches.map(async match => {
                 try {
+                    // Pobieranie dodatkowych danych dla każdego meczu
                     const stats = await fetchMatchStats(match.fixture.id);
+                    const h2h = await fetchH2H(match.teams.home.id, match.teams.away.id);
+                    
                     return {
                         match: match,
-                        analysis: analyzeMatchData(match, stats),
-                        confidence: calculateConfidence(stats)
+                        predictions: calculatePredictions(match, stats, h2h),
+                        confidence: calculateConfidence(stats, h2h)
                     };
                 } catch (error) {
                     console.error(`Błąd analizy meczu ${match.fixture.id}:`, error);
@@ -268,47 +255,54 @@
         }
 
         async function fetchMatchStats(fixtureId) {
-            const response = await fetch(`${API_FOOTBALL_URL}/fixtures/statistics?fixture=${fixtureId}`, {
+            const response = await fetch(`${API_URL}/fixtures/statistics?fixture=${fixtureId}`, {
                 headers: {
                     'x-rapidapi-host': 'v3.football.api-sports.io',
-                    'x-rapidapi-key': API_FOOTBALL_KEY
+                    'x-rapidapi-key': API_KEY
                 }
             });
-
-            if (!response.ok) {
-                throw new Error('Nie udało się pobrać statystyk meczu');
-            }
-
             return await response.json();
         }
 
-        function analyzeMatchData(match, stats) {
+        async function fetchH2H(team1Id, team2Id) {
+            const response = await fetch(`${API_URL}/fixtures/headtohead?h2h=${team1Id}-${team2Id}`, {
+                headers: {
+                    'x-rapidapi-host': 'v3.football.api-sports.io',
+                    'x-rapidapi-key': API_KEY
+                }
+            });
+            return await response.json();
+        }
+
+        function calculatePredictions(match, stats, h2h) {
             return {
-                predictedResult: predictResult(match, stats),
-                predictedGoals: predictGoals(stats),
-                predictedCards: predictCards(stats)
+                result: predictResult(match, stats, h2h),
+                goals: predictGoals(stats),
+                cards: predictCards(stats),
+                corners: predictCorners(stats)
             };
         }
 
-        function calculateConfidence(stats) {
-            // Implementacja obliczania pewności predykcji
+        function calculateConfidence(stats, h2h) {
             return Math.random() * 0.3 + 0.7; // Przykładowa implementacja
         }
 
-        function predictResult(match, stats) {
+        function predictResult(match, stats, h2h) {
             // Implementacja przewidywania wyniku
-            const results = ['1', 'X', '2'];
-            return results[Math.floor(Math.random() * results.length)];
+            const outcomes = ['1', 'X', '2'];
+            return outcomes[Math.floor(Math.random() * outcomes.length)];
         }
 
         function predictGoals(stats) {
-            // Implementacja przewidywania liczby goli
             return Math.floor(Math.random() * 4) + 1;
         }
 
         function predictCards(stats) {
-            // Implementacja przewidywania liczby kartek
             return Math.floor(Math.random() * 5) + 2;
+        }
+
+        function predictCorners(stats) {
+            return Math.floor(Math.random() * 10) + 5;
         }
 
         function displayResults(analyzedMatches) {
@@ -316,7 +310,7 @@
             
             analyzedMatches
                 .sort((a, b) => b.confidence - a.confidence)
-                .forEach(({match, analysis, confidence}) => {
+                .forEach(({match, predictions, confidence}) => {
                     const card = document.createElement('div');
                     card.className = 'match-card';
                     
@@ -325,13 +319,14 @@
                     card.innerHTML = `
                         <div class="match-header">
                             <h3>${match.teams.home.name} vs ${match.teams.away.name}</h3>
-                            <div>Pewność: ${(confidence * 100).toFixed(1)}% ${stars}</div>
+                            <div>🕒 ${new Date(match.fixture.date).toLocaleString()}</div>
                         </div>
                         <div class="prediction-section">
-                            <h4>Przewidywania:</h4>
-                            <p>Wynik: ${analysis.predictedResult}</p>
-                            <p>Bramki: ${analysis.predictedGoals}</p>
-                            <p>Kartki: ${analysis.predictedCards}</p>
+                            <h4>Przewidywania (${(confidence * 100).toFixed(1)}% ${stars})</h4>
+                            <p>Wynik: ${predictions.result}</p>
+                            <p>Bramki: ${predictions.goals}</p>
+                            <p>Kartki: ${predictions.cards}</p>
+                            <p>Kornery: ${predictions.corners}</p>
                         </div>
                     `;
                     
@@ -341,7 +336,7 @@
 
         // Inicjalizacja przy załadowaniu strony
         document.addEventListener('DOMContentLoaded', () => {
-            initializeDatePicker();
+            document.getElementById('dateSelect').valueAsDate = new Date();
         });
     </script>
 </body>
