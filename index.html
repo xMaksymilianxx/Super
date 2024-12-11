@@ -197,6 +197,21 @@
         const API_KEY = '631900acd2063f2fa684e2257dfa5588';
         const API_BASE_URL = 'https://api.the-odds-api.com/v4/sports';
 
+        async function fetchData(sport, date) {
+            const url = new URL(`${API_BASE_URL}/${sport}/odds`);
+            url.searchParams.append('apiKey', API_KEY);
+            url.searchParams.append('regions', 'eu');
+            url.searchParams.append('markets', 'h2h');
+            url.searchParams.append('dateFormat', 'iso');
+            url.searchParams.append('oddsFormat', 'decimal');
+
+            const response = await fetch(url.toString());
+            if (!response.ok) {
+                throw new Error(`API Error: ${response.status} - ${response.statusText}`);
+            }
+            return await response.json();
+        }
+
         async function analyzeMatches() {
             const loadingIndicator = document.getElementById('loadingIndicator');
             const matchesContainer = document.getElementById('matchesContainer');
@@ -207,21 +222,21 @@
                 loadingIndicator.style.display = 'block';
                 matchesContainer.innerHTML = '';
 
-                const response = await fetch(`${API_BASE_URL}/${selectedSport}/odds/?apiKey=${API_KEY}&regions=eu&markets=h2h,totals,btts`, {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                const matches = await fetchData(selectedSport, selectedDate);
+                
+                if (!matches || matches.length === 0) {
+                    matchesContainer.innerHTML = `
+                        <div class="error-message">
+                            <p>Brak meczów na wybrany dzień</p>
+                        </div>`;
+                    return;
                 }
 
-                const data = await response.json();
-                const filteredMatches = data.filter(match => 
-                    new Date(match.commence_time).toDateString() === new Date(selectedDate).toDateString()
-                );
+                const filteredMatches = matches.filter(match => {
+                    const matchDate = new Date(match.commence_time).toDateString();
+                    const selected = new Date(selectedDate).toDateString();
+                    return matchDate === selected;
+                });
 
                 if (filteredMatches.length === 0) {
                     matchesContainer.innerHTML = `
@@ -265,51 +280,69 @@
         }
 
         function predictWinner(match) {
-            const homeStrength = Math.random() * 0.4 + 0.3; // Symulacja siły drużyny
-            const awayStrength = Math.random() * 0.4 + 0.3;
-            
-            if (homeStrength > awayStrength + 0.1) return { prediction: '1', confidence: homeStrength };
-            if (awayStrength > homeStrength + 0.1) return { prediction: '2', confidence: awayStrength };
-            return { prediction: 'X', confidence: 0.5 };
+            const bookmaker = match.bookmakers?.[0];
+            if (!bookmaker) return { prediction: 'Brak danych', confidence: 0 };
+
+            const market = bookmaker.markets?.find(m => m.key === 'h2h');
+            if (!market) return { prediction: 'Brak danych', confidence: 0 };
+
+            const homeOdds = market.outcomes.find(o => o.name === match.home_team)?.price || 0;
+            const awayOdds = market.outcomes.find(o => o.name === match.away_team)?.price || 0;
+
+            const homeProb = 1 / homeOdds;
+            const awayProb = 1 / awayOdds;
+            const drawProb = 1 - (homeProb + awayProb);
+
+            const maxProb = Math.max(homeProb, awayProb, drawProb);
+            let prediction = '';
+            if (maxProb === homeProb) prediction = '1';
+            else if (maxProb === awayProb) prediction = '2';
+            else prediction = 'X';
+
+            return {
+                prediction: prediction,
+                confidence: maxProb
+            };
         }
 
         function predictGoals(match) {
-            const expectedGoals = Math.random() * 3 + 1;
+            const randomFactor = Math.random();
+            const expectedGoals = 2.5 + (randomFactor - 0.5);
             return {
                 prediction: expectedGoals > 2.5 ? 'Over 2.5' : 'Under 2.5',
-                confidence: Math.min(Math.abs(expectedGoals - 2.5) / 2, 0.9)
+                confidence: 0.5 + Math.abs(expectedGoals - 2.5) / 5
             };
         }
 
         function predictBTTS(match) {
-            const probability = Math.random();
+            const randomFactor = Math.random();
             return {
-                prediction: probability > 0.5 ? 'Tak' : 'Nie',
-                confidence: Math.abs(probability - 0.5) * 2
+                prediction: randomFactor > 0.5 ? 'Tak' : 'Nie',
+                confidence: 0.5 + Math.abs(randomFactor - 0.5)
             };
         }
 
         function predictFirstGoalTime(match) {
-            const expectedMinute = Math.floor(Math.random() * 35 + 10);
+            const minute = Math.floor(Math.random() * 30) + 15;
             return {
-                prediction: `${expectedMinute}'`,
-                confidence: 0.7
-            };
-        }
-
-        function predictCards(match) {
-            const expectedCards = Math.floor(Math.random() * 5 + 2);
-            return {
-                prediction: `${expectedCards} kartek`,
+                prediction: `${minute}'`,
                 confidence: 0.6
             };
         }
 
-        function predictCorners(match) {
-            const expectedCorners = Math.floor(Math.random() * 8 + 6);
+        function predictCards(match) {
+            const cards = Math.floor(Math.random() * 4) + 2;
             return {
-                prediction: `${expectedCorners} kornerów`,
-                confidence: 0.65
+                prediction: `${cards}`,
+                confidence: 0.55
+            };
+        }
+
+        function predictCorners(match) {
+            const corners = Math.floor(Math.random() * 6) + 7;
+            return {
+                prediction: `${corners}`,
+                confidence: 0.55
             };
         }
 
@@ -331,7 +364,6 @@
         function displayAnalyzedMatches(analyzedMatches) {
             const container = document.getElementById('matchesContainer');
             
-            // Wyświetlamy top 5 najlepszych typów
             analyzedMatches.slice(0, 5).forEach(analysis => {
                 const card = document.createElement('div');
                 card.className = 'match-card';
