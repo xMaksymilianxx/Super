@@ -82,7 +82,7 @@
 
             try {
                 // Pobierz dane z API Football-Data.org
-                const url = `https://api.football-data.org/v2/matches?dateFrom=${dateInput}&dateTo=${dateInput}`;
+                const url = `https://api.football-data.org/v4/matches?dateFrom=${dateInput}&dateTo=${dateInput}`;
                 const response = await fetch(url, {
                     method: 'GET',
                     headers: {
@@ -132,6 +132,7 @@
                 
             } catch (error) {
                 resultsDiv.innerHTML = `Błąd podczas ładowania danych z API Football-Data.org: ${error.message}`;
+                console.error(error); // Wyświetl szczegóły błędu w konsoli
             }
         }
 
