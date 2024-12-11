@@ -3,114 +3,68 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zaawansowany System Analizy Meczów</title>
+    <title>Analiza Meczów - Sofascore</title>
     <style>
-        :root {
-            --primary-color: #2196F3;
-            --success-color: #4CAF50;
-            --warning-color: #FF9800;
-            --danger-color: #F44336;
-            --dark-bg: #1a1a1a;
-            --card-bg: #2d2d2d;
-            --text-color: #ffffff;
-        }
-
         body {
-            font-family: 'Segoe UI', Arial, sans-serif;
+            font-family: Arial, sans-serif;
             margin: 0;
             padding: 20px;
-            background-color: var(--dark-bg);
-            color: var(--text-color);
-            line-height: 1.6;
+            background-color: #f4f4f4;
+            color: #333;
         }
-
         .container {
-            max-width: 1200px;
+            max-width: 800px;
             margin: 0 auto;
-            padding: 20px;
         }
-
         .header {
             text-align: center;
-            margin-bottom: 30px;
-            padding: 20px;
-            background: var(--card-bg);
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
         }
-
-        .header h1 {
-            margin: 0;
-            color: var(--primary-color);
-            font-size: 2.5em;
-        }
-
-        .control-panel {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .control-card {
-            padding: 20px;
-            background-color: var(--card-bg);
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-
-        .match-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-        }
-
         .match-card {
-            background: var(--card-bg);
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            background: #fff;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
         }
-
         .error-message {
-            color: var(--danger-color);
+            color: red;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <header class="header">
-            <h1>🎯 Zaawansowany System Analizy Meczów</h1>
-        </header>
-
-        <div class="control-panel">
-            <div class="control-card">
-                <h2>📅 Wybór daty</h2>
-                <input type="date" id="dateSelect" />
-                <button id="analyzeButton">Analizuj</button>
-                <div id="systemStatus">Gotowy do analizy</div>
-            </div>
+        <div class="header">
+            <h1>Analiza Meczów</h1>
         </div>
-
-        <div id="loadingIndicator" style="display:none;">⌛ Trwa analiza meczów...</div>
-
-        <div id="matchesContainer" class="match-grid"></div>
+        <div>
+            <label for="dateSelect">Wybierz datę:</label>
+            <input type="date" id="dateSelect" />
+            <button id="analyzeButton">Analizuj</button>
+        </div>
+        <div id="loadingIndicator" style="display:none;">⌛ Trwa analiza...</div>
+        <div id="matchesContainer"></div>
     </div>
 
     <script>
         async function fetchMatches(date) {
-            const url = date === getCurrentDate()
-                ? 'https://www.sofascore.com/pl/'
-                : `https://www.sofascore.com/pl/pilka-nozna/${date}`;
+            // Link do Sofascore dla wybranej daty
+            const url = `https://www.sofascore.com/pl/pilka-nozna/${date}`;
+            console.log(`Pobieranie danych z URL: ${url}`);
 
             try {
                 const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`Błąd podczas pobierania danych. Status: ${response.status}`);
+                }
+
                 const html = await response.text();
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(html, 'text/html');
 
-                let matches = [];
+                // Pobranie elementów meczów (przykład selektora)
                 const matchElements = doc.querySelectorAll('.event-card');
+                let matches = [];
 
                 matchElements.forEach(match => {
                     const homeTeam = match.querySelector('.home-team .team-name')?.textContent.trim();
@@ -121,19 +75,16 @@
                     }
                 });
 
+                if (matches.length === 0) {
+                    console.warn('Nie znaleziono żadnych meczów.');
+                }
+
                 return matches;
 
             } catch (error) {
-                console.error('Błąd podczas pobierania danych z Sofascore:', error.message);
+                console.error('Błąd podczas pobierania danych:', error.message);
                 return [];
             }
-        }
-
-        function generateH2HLinks(matches) {
-            return matches.map(match => ({
-                ...match,
-                h2hLink: `https://www.fctables.com/h2h/${match.homeTeam.toLowerCase()}/${match.awayTeam.toLowerCase()}/`
-            }));
         }
 
         function displayResults(matches) {
@@ -150,40 +101,37 @@
                 card.className = 'match-card';
                 card.innerHTML = `
                     <h3>${match.homeTeam} vs ${match.awayTeam}</h3>
-                    <p><a href="${match.h2hLink}" target="_blank">Statystyki H2H</a></p>
+                    <p><a href="https://www.fctables.com/h2h/${match.homeTeam.toLowerCase()}/${match.awayTeam.toLowerCase()}/" target="_blank">Statystyki H2H</a></p>
                 `;
                 container.appendChild(card);
             });
         }
 
         async function startAnalysis() {
-            const dateInput = document.getElementById('dateSelect').value || getCurrentDate();
-            
+            const dateInput = document.getElementById('dateSelect').value;
+
+            if (!dateInput) {
+                alert('Proszę wybrać datę.');
+                return;
+            }
+
             document.getElementById('loadingIndicator').style.display = 'block';
-            
+
             try {
                 const matches = await fetchMatches(dateInput);
-                const matchesWithLinks = generateH2HLinks(matches);
 
-                displayResults(matchesWithLinks);
+                displayResults(matches);
 
-                document.getElementById('systemStatus').textContent = 'Analiza zakończona.';
+                document.getElementById('loadingIndicator').style.display = 'none';
                 
             } catch (error) {
                 console.error('Błąd podczas analizy:', error.message);
-                document.getElementById('systemStatus').textContent = 'Wystąpił błąd podczas analizy.';
                 
                 document.getElementById('matchesContainer').innerHTML =
                     `<p class="error-message">⚠️ Wystąpił błąd podczas analizy meczów.</p>`;
                 
-            } finally {
                 document.getElementById('loadingIndicator').style.display = 'none';
             }
-        }
-
-        function getCurrentDate() {
-            const today = new Date();
-            return today.toISOString().split('T')[0];
         }
 
         document.getElementById('analyzeButton').addEventListener('click', startAnalysis);
