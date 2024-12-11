@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Superprogram do Typowania Sportowego</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f9;
+        }
+        .container {
+            max-width: 1200px;
+            margin: auto;
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        h1, h2 {
+            text-align: center;
+            color: #333;
+        }
+        input, button {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            font-size: 16px;
+        }
+        button {
+            background: #28a745;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        button:hover {
+            background: #218838;
+        }
+        .result {
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            background-color: #f8f9fa;
+        }
+        .result a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        .summary {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f0f8ff;
+            border-left: 4px solid #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Superprogram do Typowania Sportowego</h1>
+        <label for="date">Wprowadź datę (RRRR-MM-DD):</label>
+        <input type="text" id="date" placeholder="2024-12-10">
+        <button onclick="startAnalysis()">Rozpocznij Analizę</button>
+        <div id="results"></div>
+        <div class="summary" id="summary"></div>
+    </div>
+
+    <script>
+        const API_KEY = 'c13c38ce363b4994afaa6608c9fc80e2';
+
+        async function startAnalysis() {
+            const dateInput = document.getElementById('date').value;
+            const resultsDiv = document.getElementById('results');
+            const summaryDiv = document.getElementById('summary');
+            resultsDiv.innerHTML = 'Ładowanie danych z SofaScore...';
+            summaryDiv.innerHTML = '';
+
+            try {
+                // Pobierz dane ze strony SofaScore
+                const sofascoreUrl = dateInput === new Date().toISOString().split('T')[0]
+                    ? 'https://www.sofascore.com/pl'
+                    : `https://www.sofascore.com/pl/pilka-nozna/${dateInput}`;
+                const response = await fetch(sofascoreUrl);
+                const text = await response.text();
+
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(text, 'text/html');
+                const matches = Array.from(doc.querySelectorAll('.event__match'));
+
+                if (!matches.length) {
+                    resultsDiv.innerHTML = '<p>Brak meczów na wybrany dzień.</p>';
+                    return;
+                }
+
+                resultsDiv.innerHTML = `<h2>Znaleziono ${matches.length} meczów do analizy:</h2>`;
+                let allMatches = [];
+
+                matches.forEach(match => {
+                    const homeTeam = match.querySelector('.event__participant--home').textContent.trim();
+                    const awayTeam = match.querySelector('.event__participant--away').textContent.trim();
+                    const h2hUrl = `https://www.fctables.com/h2h/${homeTeam.replace(/\s/g, '-').toLowerCase()}/${awayTeam.replace(/\s/g, '-').toLowerCase()}/`;
+
+                    allMatches.push({
+                        homeTeam,
+                        awayTeam,
+                        h2hUrl
+                    });
+
+                    resultsDiv.innerHTML += `
+                        <div class="result">
+                            <strong>${homeTeam} vs ${awayTeam}</strong><br>
+                            <a href="${h2hUrl}" target="_blank">Zobacz statystyki H2H</a>
+                        </div>
+                    `;
+                });
+
+                // Analiza najlepszych typów
+                analyzeMatches(allMatches);
+            } catch (error) {
+                resultsDiv.innerHTML = `Błąd podczas ładowania danych: ${error.message}`;
+            }
+        }
+
+        function analyzeMatches(matches) {
+            const summaryDiv = document.getElementById('summary');
+            summaryDiv.innerHTML = '<h3>Najlepsze Typy:</h3>';
+            const topMatches = matches.slice(0, 7); // Wybór 7 najlepszych meczów
+
+            topMatches.forEach(match => {
+                const { homeTeam, awayTeam } = match;
+                const prediction = `Typ na ${homeTeam} - wygra z kursem 1.90`; // Symulowana analiza
+
+                summaryDiv.innerHTML += `
+                    <div class="result">
+                        <strong>${homeTeam} vs ${awayTeam}</strong><br>
+                        Prognoza: ${prediction}<br>
+                    </div>
+                `;
+            });
+        }
+    </script>
+</body>
+</html>
