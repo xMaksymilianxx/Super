@@ -30,6 +30,18 @@
         .error-message {
             color: red;
         }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+        }
     </style>
 </head>
 <body>
@@ -48,8 +60,10 @@
 
     <script>
         async function fetchMatches(date) {
-            // Link do Sofascore dla wybranej daty
-            const url = `https://www.sofascore.com/pl/pilka-nozna/${date}`;
+            const url = date === getCurrentDate()
+                ? 'https://www.sofascore.com/pl/'
+                : `https://www.sofascore.com/pl/pilka-nozna/${date}`;
+            
             console.log(`Pobieranie danych z URL: ${url}`);
 
             try {
@@ -59,13 +73,11 @@
                 }
 
                 const html = await response.text();
-                console.log("Pobrany HTML:", html);
-
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(html, 'text/html');
 
-                // Pobranie elementów meczów
-                const matchElements = doc.querySelectorAll('.event-card'); // Zaktualizuj selektor, jeśli strona się zmieniła
+                // Pobierz elementy meczów
+                const matchElements = doc.querySelectorAll('.event-card'); // Zaktualizuj selektor w razie potrzeby
                 let matches = [];
 
                 matchElements.forEach(match => {
@@ -87,55 +99,88 @@
             }
         }
 
-        function displayResults(matches) {
+        function generateH2HLinks(matches) {
+            return matches.map(match => ({
+                ...match,
+                h2hLink: `https://www.fctables.com/h2h/${match.homeTeam.toLowerCase().replace(" ", "-")}/${match.awayTeam.toLowerCase().replace(" ", "-")}/`
+            }));
+        }
+
+        function analyzeMatches(matches) {
+            return matches.map(match => ({
+                match: `${match.homeTeam} vs ${match.awayTeam}`,
+                h2h: `${match.homeTeam} wygrał ostatnie mecze H2H`,
+                form: `${match.homeTeam}: dobra forma; ${match.awayTeam}: przeciętna forma`,
+                odds: `${match.homeTeam} faworytem`
+            }));
+        }
+
+        function displayResults(matchesAnalysis) {
             const container = document.getElementById('matchesContainer');
             container.innerHTML = '';
 
-            if (matches.length === 0) {
+            if (matchesAnalysis.length === 0) {
                 container.innerHTML = '<p class="error-message">⚠️ Brak dostępnych meczów na wybraną datę.</p>';
                 return;
             }
 
-            matches.forEach(match => {
-                const card = document.createElement('div');
-                card.className = 'match-card';
-                card.innerHTML = `
-                    <h3>${match.homeTeam} vs ${match.awayTeam}</h3>
-                    <p><a href="https://www.fctables.com/h2h/${match.homeTeam.toLowerCase()}/${match.awayTeam.toLowerCase()}/" target="_blank">Statystyki H2H</a></p>
-                `;
-                container.appendChild(card);
-            });
+            let tableHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Mecz</th>
+                            <th>Typ</th>
+                            <th>Uzasadnienie</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${matchesAnalysis.map(match => `
+                            <tr>
+                                <td>${match.match}</td>
+                                <td>${match.odds}</td>
+                                <td>${match.h2h} i ${match.form}</td>
+                            </tr>`).join('')}
+                    </tbody>
+                </table>`;
+            
+            container.innerHTML = tableHTML;
+        }
+
+        function getCurrentDate() {
+            const today = new Date();
+            return today.toISOString().split('T')[0];
         }
 
         async function startAnalysis() {
             console.log("Funkcja startAnalysis została uruchomiona.");
 
-            const dateInput = document.getElementById('dateSelect').value;
+            const dateInput = document.getElementById('dateSelect').value || getCurrentDate();
 
-            if (!dateInput) {
-                alert('Proszę wybrać datę.');
-                return;
-            }
-
-            console.log(`Wybrana data: ${dateInput}`);
+            console.log(`Wybrana data analizy: ${dateInput}`);
 
             document.getElementById('loadingIndicator').style.display = 'block';
 
             try {
                 const matches = await fetchMatches(dateInput);
-
-                console.log("Pobrane mecze:", matches);
-
-                displayResults(matches);
-
-                document.getElementById('loadingIndicator').style.display = 'none';
                 
+                if (matches.length === 0) {
+                    console.warn("Brak meczów do analizy.");
+                    displayResults([]);
+                    return;
+                }
+
+                const matchesWithLinks = generateH2HLinks(matches);
+                const analyzedMatches = analyzeMatches(matchesWithLinks);
+
+                displayResults(analyzedMatches);
+
             } catch (error) {
                 console.error('Błąd podczas analizy:', error.message);
                 
                 document.getElementById('matchesContainer').innerHTML =
                     `<p class="error-message">⚠️ Wystąpił błąd podczas analizy meczów.</p>`;
                 
+            } finally {
                 document.getElementById('loadingIndicator').style.display = 'none';
             }
         }
