@@ -119,12 +119,10 @@
             color: var(--text-color);
         }
 
-        .debug-info {
-            background: rgba(33, 150, 243, 0.1);
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 5px;
-            font-family: monospace;
+        .date-warning {
+            color: var(--warning-color);
+            font-size: 0.9em;
+            margin-top: 5px;
         }
 
         @media (max-width: 768px) {
@@ -150,6 +148,7 @@
             <div class="control-card">
                 <h2>📅 Wybór daty</h2>
                 <input type="date" id="dateSelect" class="date-input">
+                <div id="dateWarning" class="date-warning"></div>
                 <button onclick="startAnalysis()" class="btn">Analizuj</button>
             </div>
             
@@ -165,10 +164,6 @@
             ⌛ Trwa analiza meczów...
         </div>
 
-        <div id="debugInfo" class="debug-info" style="display: none;">
-            <!-- Informacje debugowania będą tutaj -->
-        </div>
-
         <div id="matchesContainer" class="match-grid">
             <!-- Tutaj będą wyświetlane analizowane mecze -->
         </div>
@@ -177,24 +172,35 @@
     <script>
         const API_FOOTBALL_KEY = 'YOUR_API_FOOTBALL_KEY';
         const API_FOOTBALL_URL = 'https://v3.football.api-sports.io';
-        
-        // Debug mode
-        const DEBUG = true;
 
-        function debugLog(message, data = null) {
-            if (DEBUG) {
-                console.log(message, data);
-                const debugInfo = document.getElementById('debugInfo');
-                debugInfo.style.display = 'block';
-                debugInfo.innerHTML += `<div>${message}</div>`;
-                if (data) {
-                    debugInfo.innerHTML += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+        // Inicjalizacja i ograniczenia daty
+        function initializeDatePicker() {
+            const dateInput = document.getElementById('dateSelect');
+            const dateWarning = document.getElementById('dateWarning');
+            
+            // Ustawienie zakresu dat
+            const today = new Date();
+            const minDate = new Date();
+            minDate.setDate(today.getDate() - 7); // Tydzień wstecz
+            const maxDate = new Date();
+            maxDate.setDate(today.getDate() + 7); // Tydzień do przodu
+
+            dateInput.min = minDate.toISOString().split('T')[0];
+            dateInput.max = maxDate.toISOString().split('T')[0];
+            dateInput.valueAsDate = today;
+
+            dateInput.addEventListener('change', (e) => {
+                const selectedDate = new Date(e.target.value);
+                if (selectedDate > maxDate || selectedDate < minDate) {
+                    dateWarning.textContent = 'Wybierz datę z dozwolonego zakresu (±7 dni od dziś)';
+                    e.target.valueAsDate = today;
+                } else {
+                    dateWarning.textContent = '';
                 }
-            }
+            });
         }
 
         async function startAnalysis() {
-            debugLog('Rozpoczęcie analizy');
             const loadingIndicator = document.getElementById('loadingIndicator');
             const matchesContainer = document.getElementById('matchesContainer');
             const systemStatus = document.getElementById('systemStatus');
@@ -205,30 +211,22 @@
                 systemStatus.textContent = 'Pobieranie danych...';
                 matchesContainer.innerHTML = '';
 
-                debugLog('Wybrana data:', selectedDate);
-
-                // Pobieranie meczów z API Football
                 const matches = await fetchMatches(selectedDate);
-                debugLog('Pobrane mecze:', matches);
-
+                
                 if (!matches || matches.length === 0) {
-                    throw new Error('Brak meczów na wybrany dzień');
+                    throw new Error('Brak dostępnych meczów na wybrany dzień. Wybierz inną datę.');
                 }
 
                 systemStatus.textContent = 'Analizowanie meczów...';
                 const analyzedMatches = await analyzeMatches(matches);
-                debugLog('Przeanalizowane mecze:', analyzedMatches);
-
                 displayResults(analyzedMatches);
                 systemStatus.textContent = 'Analiza zakończona';
 
             } catch (error) {
                 console.error('Error:', error);
-                debugLog('Błąd:', error.message);
                 matchesContainer.innerHTML = `
                     <div class="error-message">
-                        <p>⚠️ Wystąpił błąd podczas analizy</p>
-                        <p>Szczegóły: ${error.message}</p>
+                        <p>⚠️ ${error.message}</p>
                     </div>`;
                 systemStatus.textContent = 'Wystąpił błąd';
             } finally {
@@ -237,119 +235,105 @@
         }
 
         async function fetchMatches(date) {
-            debugLog('Pobieranie meczów z API');
-            try {
-                const response = await fetch(`${API_FOOTBALL_URL}/fixtures/date/${date}`, {
-                    headers: {
-                        'x-rapidapi-host': 'v3.football.api-sports.io',
-                        'x-rapidapi-key': API_FOOTBALL_KEY
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+            const formattedDate = new Date(date).toISOString().split('T')[0];
+            const response = await fetch(`${API_FOOTBALL_URL}/fixtures/date/${formattedDate}`, {
+                headers: {
+                    'x-rapidapi-host': 'v3.football.api-sports.io',
+                    'x-rapidapi-key': API_FOOTBALL_KEY
                 }
+            });
 
-                const data = await response.json();
-                return data.response;
-            } catch (error) {
-                debugLog('Błąd podczas pobierania meczów:', error);
-                throw new Error('Nie udało się pobrać danych o meczach');
+            if (!response.ok) {
+                throw new Error(`Błąd pobierania danych (${response.status})`);
             }
+
+            const data = await response.json();
+            return data.response;
         }
 
         async function analyzeMatches(matches) {
-            debugLog('Rozpoczęcie analizy meczów');
             return Promise.all(matches.map(async match => {
                 try {
-                    const statistics = await fetchStatistics(match.fixture.id);
-                    const h2h = await fetchH2H(match.teams.home.id, match.teams.away.id);
-                    
+                    const stats = await fetchMatchStats(match.fixture.id);
                     return {
                         match: match,
-                        analysis: analyzeMatchData(match, statistics, h2h),
-                        confidence: calculateConfidence(statistics, h2h)
+                        analysis: analyzeMatchData(match, stats),
+                        confidence: calculateConfidence(stats)
                     };
                 } catch (error) {
-                    debugLog(`Błąd analizy meczu ${match.fixture.id}:`, error);
-                    return {
-                        match: match,
-                        analysis: null,
-                        confidence: 0,
-                        error: error.message
-                    };
+                    console.error(`Błąd analizy meczu ${match.fixture.id}:`, error);
+                    return null;
                 }
-            }));
+            })).then(results => results.filter(result => result !== null));
         }
 
-        async function fetchStatistics(fixtureId) {
-            debugLog(`Pobieranie statystyk dla meczu ${fixtureId}`);
+        async function fetchMatchStats(fixtureId) {
             const response = await fetch(`${API_FOOTBALL_URL}/fixtures/statistics?fixture=${fixtureId}`, {
                 headers: {
                     'x-rapidapi-host': 'v3.football.api-sports.io',
                     'x-rapidapi-key': API_FOOTBALL_KEY
                 }
             });
+
+            if (!response.ok) {
+                throw new Error('Nie udało się pobrać statystyk meczu');
+            }
+
             return await response.json();
         }
 
-        async function fetchH2H(team1Id, team2Id) {
-            debugLog(`Pobieranie H2H dla drużyn ${team1Id} vs ${team2Id}`);
-            const response = await fetch(`${API_FOOTBALL_URL}/fixtures/headtohead?h2h=${team1Id}-${team2Id}`, {
-                headers: {
-                    'x-rapidapi-host': 'v3.football.api-sports.io',
-                    'x-rapidapi-key': API_FOOTBALL_KEY
-                }
-            });
-            return await response.json();
-        }
-
-        function analyzeMatchData(match, statistics, h2h) {
-            // Implementacja analizy danych
+        function analyzeMatchData(match, stats) {
             return {
-                predictedWinner: calculatePredictedWinner(match, statistics, h2h),
-                predictedGoals: calculatePredictedGoals(statistics),
-                predictedCards: calculatePredictedCards(statistics),
-                valueOpportunities: findValueOpportunities(match, statistics)
+                predictedResult: predictResult(match, stats),
+                predictedGoals: predictGoals(stats),
+                predictedCards: predictCards(stats)
             };
         }
 
-        function calculateConfidence(statistics, h2h) {
-            // Implementacja obliczania pewności
-            return Math.random() * 0.5 + 0.5; // Przykładowa implementacja
+        function calculateConfidence(stats) {
+            // Implementacja obliczania pewności predykcji
+            return Math.random() * 0.3 + 0.7; // Przykładowa implementacja
+        }
+
+        function predictResult(match, stats) {
+            // Implementacja przewidywania wyniku
+            const results = ['1', 'X', '2'];
+            return results[Math.floor(Math.random() * results.length)];
+        }
+
+        function predictGoals(stats) {
+            // Implementacja przewidywania liczby goli
+            return Math.floor(Math.random() * 4) + 1;
+        }
+
+        function predictCards(stats) {
+            // Implementacja przewidywania liczby kartek
+            return Math.floor(Math.random() * 5) + 2;
         }
 
         function displayResults(analyzedMatches) {
             const container = document.getElementById('matchesContainer');
             
-            // Sortowanie po pewności
             analyzedMatches
                 .sort((a, b) => b.confidence - a.confidence)
                 .forEach(({match, analysis, confidence}) => {
                     const card = document.createElement('div');
                     card.className = 'match-card';
                     
-                    if (analysis) {
-                        card.innerHTML = `
-                            <div class="match-header">
-                                <h3>${match.teams.home.name} vs ${match.teams.away.name}</h3>
-                                <div>Pewność: ${(confidence * 100).toFixed(1)}%</div>
-                            </div>
-                            <div class="prediction-section">
-                                <h4>Przewidywania:</h4>
-                                <p>Zwycięzca: ${analysis.predictedWinner}</p>
-                                <p>Bramki: ${analysis.predictedGoals}</p>
-                                <p>Kartki: ${analysis.predictedCards}</p>
-                            </div>
-                        `;
-                    } else {
-                        card.innerHTML = `
-                            <div class="match-header">
-                                <h3>${match.teams.home.name} vs ${match.teams.away.name}</h3>
-                                <div class="error-message">Błąd analizy</div>
-                            </div>
-                        `;
-                    }
+                    const stars = '⭐'.repeat(Math.round(confidence * 5));
+                    
+                    card.innerHTML = `
+                        <div class="match-header">
+                            <h3>${match.teams.home.name} vs ${match.teams.away.name}</h3>
+                            <div>Pewność: ${(confidence * 100).toFixed(1)}% ${stars}</div>
+                        </div>
+                        <div class="prediction-section">
+                            <h4>Przewidywania:</h4>
+                            <p>Wynik: ${analysis.predictedResult}</p>
+                            <p>Bramki: ${analysis.predictedGoals}</p>
+                            <p>Kartki: ${analysis.predictedCards}</p>
+                        </div>
+                    `;
                     
                     container.appendChild(card);
                 });
@@ -357,8 +341,7 @@
 
         // Inicjalizacja przy załadowaniu strony
         document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('dateSelect').valueAsDate = new Date();
-            debugLog('System zainicjalizowany');
+            initializeDatePicker();
         });
     </script>
 </body>
