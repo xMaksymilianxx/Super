@@ -46,26 +46,34 @@
             border: 1px solid #ccc;
             background-color: #f8f9fa;
         }
+        .summary {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f0f8ff;
+            border-left: 4px solid #007bff;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Superprogram do Typowania Sportowego</h1>
         <label for="date">Wybierz datę:</label>
-        <input type="date" id="date">
-        <button onclick="fetchMatches()">Rozpocznij Analizę</button>
+        <input type="date" id="date" onchange="fetchAndAnalyzeMatches()">
         <div id="results"></div>
+        <div class="summary" id="summary"></div>
     </div>
 
     <script>
-        const API_KEY = 'cae91aebdemsh34aeee667655c55p10476djsn8ecef9041e01';
+        const API_KEY = 'c13c38ce363b4994afaa6608c9fc80e2';
 
-        async function fetchMatches() {
+        async function fetchAndAnalyzeMatches() {
             const dateInput = document.getElementById('date').value.trim();
             const resultsDiv = document.getElementById('results');
-            
+            const summaryDiv = document.getElementById('summary');
+
             // Wyczyść poprzednie wyniki
-            resultsDiv.innerHTML = 'Ładowanie danych z API SofaScore...';
+            resultsDiv.innerHTML = 'Ładowanie danych z API Football-Data.org...';
+            summaryDiv.innerHTML = '';
 
             if (!dateInput) {
                 resultsDiv.innerHTML = '<p>Proszę wybrać datę.</p>';
@@ -73,13 +81,12 @@
             }
 
             try {
-                // Pobierz dane z API SofaScore
-                const url = `https://sofascore.p.rapidapi.com/matches/list-by-date?date=${dateInput}`;
+                // Pobierz dane z API Football-Data.org
+                const url = `https://api.football-data.org/v2/matches?dateFrom=${dateInput}&dateTo=${dateInput}`;
                 const response = await fetch(url, {
                     method: 'GET',
                     headers: {
-                        'x-rapidapi-host': 'sofascore.p.rapidapi.com',
-                        'x-rapidapi-key': API_KEY
+                        'X-Auth-Token': API_KEY
                     }
                 });
 
@@ -90,29 +97,68 @@
                 const data = await response.json();
 
                 // Wyświetl dane w interfejsie użytkownika
-                if (data.categories && data.categories.length > 0) {
+                if (data.matches && data.matches.length > 0) {
                     let matchesHTML = '';
-                    data.categories.forEach(category => {
-                        category.tournaments.forEach(tournament => {
-                            tournament.events.forEach(event => {
-                                matchesHTML += `
-                                    <div class="result">
-                                        <strong>${event.homeTeam.name} vs ${event.awayTeam.name}</strong><br>
-                                        Czas rozpoczęcia: ${new Date(event.startTimestamp * 1000).toLocaleString()}<br>
-                                    </div>
-                                `;
-                            });
+                    let analyzedMatches = [];
+
+                    data.matches.forEach(match => {
+                        const homeTeam = match.homeTeam.name;
+                        const awayTeam = match.awayTeam.name;
+
+                        matchesHTML += `
+                            <div class="result">
+                                <strong>${homeTeam} vs ${awayTeam}</strong><br>
+                                Czas rozpoczęcia: ${new Date(match.utcDate).toLocaleString()}<br>
+                                Status meczu: ${match.status}<br>
+                            </div>
+                        `;
+
+                        // Dodaj mecz do analizy
+                        analyzedMatches.push({
+                            homeTeam,
+                            awayTeam,
+                            status: match.status,
+                            utcDate: match.utcDate
                         });
                     });
 
-                    resultsDiv.innerHTML = matchesHTML || '<p>Brak meczów dla wybranej daty.</p>';
+                    resultsDiv.innerHTML = matchesHTML;
+
+                    // Analiza najlepszych typów
+                    analyzeMatches(analyzedMatches);
                 } else {
-                    resultsDiv.innerHTML = '<p>Brak danych dla wybranej daty.</p>';
+                    resultsDiv.innerHTML = '<p>Brak meczów dla wybranej daty.</p>';
                 }
                 
             } catch (error) {
-                resultsDiv.innerHTML = `Błąd podczas ładowania danych z API SofaScore: ${error.message}`;
+                resultsDiv.innerHTML = `Błąd podczas ładowania danych z API Football-Data.org: ${error.message}`;
             }
+        }
+
+        function analyzeMatches(matches) {
+            const summaryDiv = document.getElementById('summary');
+            
+            if (matches.length === 0) {
+                summaryDiv.innerHTML = '<p>Brak meczów do analizy.</p>';
+                return;
+            }
+
+            summaryDiv.innerHTML = '<h3>Najlepsze Typy:</h3>';
+
+            // Przykładowa analiza - wybór pierwszych kilku meczów
+            const topMatches = matches.slice(0, Math.min(matches.length, 5)); // Maksymalnie 5 najlepszych meczów
+
+            topMatches.forEach(match => {
+                const prediction = `Typ na ${match.homeTeam} - wygra z kursem 1.90`; // Symulowana analiza
+
+                summaryDiv.innerHTML += `
+                    <div class="result">
+                        <strong>${match.homeTeam} vs ${match.awayTeam}</strong><br>
+                        Prognoza: ${prediction}<br>
+                        Status meczu: ${match.status}<br>
+                    </div>
+                `;
+            });
         }
     </script>
 </body>
