@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>System Analizy Meczów i Value Betów</title>
+    <title>Zaawansowany System Analizy Meczów</title>
     <style>
         :root {
             --primary-color: #2196F3;
@@ -78,6 +78,39 @@
             transform: translateY(-5px);
         }
 
+        .prediction-section {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(33, 150, 243, 0.1);
+            border-radius: 5px;
+        }
+
+        .best-bet {
+            padding: 10px;
+            border-left: 3px solid var(--success-color);
+            margin-top: 10px;
+        }
+
+        .analysis-details {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 5px;
+        }
+
+        .team-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .stat-item {
+            padding: 5px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 3px;
+        }
+
         .btn {
             padding: 10px 20px;
             border: none;
@@ -119,6 +152,20 @@
             color: var(--text-color);
         }
 
+        .confidence-meter {
+            height: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            margin-top: 5px;
+        }
+
+        .confidence-value {
+            height: 100%;
+            background: var(--success-color);
+            border-radius: 5px;
+            transition: width 0.3s ease;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 10px;
@@ -135,14 +182,14 @@
 <body>
     <div class="container">
         <header class="header">
-            <h1>🎯 System Analizy Meczów i Value Betów</h1>
+            <h1>🎯 Zaawansowany System Analizy Meczów</h1>
         </header>
 
         <div class="control-panel">
             <div class="control-card">
                 <h2>📅 Wybór daty</h2>
                 <input type="date" id="dateSelect" class="date-input">
-                <button onclick="analyzeMatches()" class="btn">Analizuj</button>
+                <button onclick="startAnalysis()" class="btn">Analizuj</button>
             </div>
             
             <div class="control-card">
@@ -151,10 +198,19 @@
                     Gotowy do analizy
                 </div>
             </div>
+
+            <div class="control-card">
+                <h2>📊 Filtry analizy</h2>
+                <select id="analysisDepth" class="select-input">
+                    <option value="basic">Podstawowa</option>
+                    <option value="advanced" selected>Zaawansowana</option>
+                    <option value="full">Pełna</option>
+                </select>
+            </div>
         </div>
 
         <div id="loadingIndicator" class="loading" style="display: none;">
-            ⌛ Trwa analiza meczów...
+            ⌛ Trwa kompleksowa analiza meczów...
         </div>
 
         <div id="matchesContainer" class="match-grid">
@@ -165,179 +221,3 @@
     <script>
         const API_KEY = 'ac0417c6e0dcfa236b146b9585892c9a';
         const API_URL = 'https://v3.football.api-sports.io';
-
-        async function analyzeMatches() {
-            const loadingIndicator = document.getElementById('loadingIndicator');
-            const matchesContainer = document.getElementById('matchesContainer');
-            const systemStatus = document.getElementById('systemStatus');
-            const selectedDate = document.getElementById('dateSelect').value;
-
-            try {
-                loadingIndicator.style.display = 'block';
-                systemStatus.textContent = 'Pobieranie danych...';
-                matchesContainer.innerHTML = '';
-
-                console.log('Próba pobrania meczów dla daty:', selectedDate);
-                const matches = await fetchMatches(selectedDate);
-                console.log('Pobrane mecze:', matches);
-
-                if (matches.length === 0) {
-                    throw new Error('Brak meczów na wybrany dzień');
-                }
-
-                const analyzedMatches = await analyzeMatchData(matches);
-                displayResults(analyzedMatches);
-                systemStatus.textContent = 'Analiza zakończona';
-
-            } catch (error) {
-                console.error('Error:', error);
-                matchesContainer.innerHTML = `
-                    <div class="error-message">
-                        <p>⚠️ Wystąpił błąd podczas analizy</p>
-                        <p>Szczegóły: ${error.message}</p>
-                    </div>`;
-                systemStatus.textContent = 'Wystąpił błąd';
-            } finally {
-                loadingIndicator.style.display = 'none';
-            }
-        }
-
-        async function fetchMatches(date) {
-            const formattedDate = new Date(date).toISOString().split('T')[0];
-            console.log('Wysyłanie zapytania do API dla daty:', formattedDate);
-
-            try {
-                const response = await fetch(`${API_URL}/fixtures?date=${formattedDate}`, {
-                    method: 'GET',
-                    headers: {
-                        'x-rapidapi-host': 'v3.football.api-sports.io',
-                        'x-rapidapi-key': API_KEY
-                    }
-                });
-
-                console.log('Status odpowiedzi:', response.status);
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                const data = await response.json();
-                console.log('Otrzymane dane:', data);
-
-                if (!data.response || data.response.length === 0) {
-                    throw new Error('Brak dostępnych meczów na wybrany dzień');
-                }
-
-                return data.response;
-            } catch (error) {
-                console.error('Błąd podczas pobierania danych:', error);
-                throw error;
-            }
-        }
-
-        async function analyzeMatchData(matches) {
-            return Promise.all(matches.map(async match => {
-                try {
-                    // Pobieranie dodatkowych danych dla każdego meczu
-                    const stats = await fetchMatchStats(match.fixture.id);
-                    const h2h = await fetchH2H(match.teams.home.id, match.teams.away.id);
-                    
-                    return {
-                        match: match,
-                        predictions: calculatePredictions(match, stats, h2h),
-                        confidence: calculateConfidence(stats, h2h)
-                    };
-                } catch (error) {
-                    console.error(`Błąd analizy meczu ${match.fixture.id}:`, error);
-                    return null;
-                }
-            })).then(results => results.filter(result => result !== null));
-        }
-
-        async function fetchMatchStats(fixtureId) {
-            const response = await fetch(`${API_URL}/fixtures/statistics?fixture=${fixtureId}`, {
-                headers: {
-                    'x-rapidapi-host': 'v3.football.api-sports.io',
-                    'x-rapidapi-key': API_KEY
-                }
-            });
-            return await response.json();
-        }
-
-        async function fetchH2H(team1Id, team2Id) {
-            const response = await fetch(`${API_URL}/fixtures/headtohead?h2h=${team1Id}-${team2Id}`, {
-                headers: {
-                    'x-rapidapi-host': 'v3.football.api-sports.io',
-                    'x-rapidapi-key': API_KEY
-                }
-            });
-            return await response.json();
-        }
-
-        function calculatePredictions(match, stats, h2h) {
-            return {
-                result: predictResult(match, stats, h2h),
-                goals: predictGoals(stats),
-                cards: predictCards(stats),
-                corners: predictCorners(stats)
-            };
-        }
-
-        function calculateConfidence(stats, h2h) {
-            return Math.random() * 0.3 + 0.7; // Przykładowa implementacja
-        }
-
-        function predictResult(match, stats, h2h) {
-            // Implementacja przewidywania wyniku
-            const outcomes = ['1', 'X', '2'];
-            return outcomes[Math.floor(Math.random() * outcomes.length)];
-        }
-
-        function predictGoals(stats) {
-            return Math.floor(Math.random() * 4) + 1;
-        }
-
-        function predictCards(stats) {
-            return Math.floor(Math.random() * 5) + 2;
-        }
-
-        function predictCorners(stats) {
-            return Math.floor(Math.random() * 10) + 5;
-        }
-
-        function displayResults(analyzedMatches) {
-            const container = document.getElementById('matchesContainer');
-            
-            analyzedMatches
-                .sort((a, b) => b.confidence - a.confidence)
-                .forEach(({match, predictions, confidence}) => {
-                    const card = document.createElement('div');
-                    card.className = 'match-card';
-                    
-                    const stars = '⭐'.repeat(Math.round(confidence * 5));
-                    
-                    card.innerHTML = `
-                        <div class="match-header">
-                            <h3>${match.teams.home.name} vs ${match.teams.away.name}</h3>
-                            <div>🕒 ${new Date(match.fixture.date).toLocaleString()}</div>
-                        </div>
-                        <div class="prediction-section">
-                            <h4>Przewidywania (${(confidence * 100).toFixed(1)}% ${stars})</h4>
-                            <p>Wynik: ${predictions.result}</p>
-                            <p>Bramki: ${predictions.goals}</p>
-                            <p>Kartki: ${predictions.cards}</p>
-                            <p>Kornery: ${predictions.corners}</p>
-                        </div>
-                    `;
-                    
-                    container.appendChild(card);
-                });
-        }
-
-        // Inicjalizacja przy załadowaniu strony
-        document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('dateSelect').valueAsDate = new Date();
-        });
-    </script>
-</body>
-</html>
