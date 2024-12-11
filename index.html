@@ -1,355 +1,277 @@
-<!DOCTYPE html>
-<html lang="pl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>System Analizy Spotkań</title>
-    <style>
-        :root {
-            --primary-color: #2196F3;
-            --success-color: #4CAF50;
-            --warning-color: #FF9800;
-            --danger-color: #F44336;
-            --header-color: #00BCD4;
-            --bg-color: #f5f5f5;
-            --text-color: #333;
-        }
+import requests
+from datetime import datetime, timedelta
+import numpy as np
+from typing import List, Dict, Any, Tuple
+import pandas as pd
+from dataclasses import dataclass
+import json
+from rich.console import Console
+from rich.table import Table
+from rich import print as rprint
+import aiohttp
+import asyncio
+from statistics import mean, stdev
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            line-height: 1.6;
-        }
+class OddsAnalyzer:
+    def __init__(self, api_key: str = "631900acd2063f2fa684e2257dfa5588"):
+        self.api_key = api_key
+        self.base_url = "https://api.the-odds-api.com/v4/sports"
+        self.bookmakers = [
+            "betclic", "bet365", "unibet", "williamhill", 
+            "pinnacle", "marathonbet", "bwin"
+        ]
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
+    async def fetch_odds(self, sport: str = "soccer") -> Dict[str, Any]:
+        """Pobieranie kursów z różnych bukmacherów"""
+        async with aiohttp.ClientSession() as session:
+            url = f"{self.base_url}/{sport}/odds"
+            params = {
+                "apiKey": self.api_key,
+                "regions": "eu",
+                "markets": "h2h,totals,spreads",
+                "oddsFormat": "decimal",
+                "bookmakers": ",".join(self.bookmakers)
+            }
+            async with session.get(url, params=params) as response:
+                return await response.json()
 
-        .header {
-            color: var(--header-color);
-            font-size: 2em;
-            margin-bottom: 20px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid var(--header-color);
-        }
+    def analyze_value_bets(self, odds_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Analiza value betów i pułapek bukmacherskich"""
+        value_bets = []
+        
+        for match in odds_data:
+            bookmaker_odds = self._extract_bookmaker_odds(match)
+            if not bookmaker_odds:
+                continue
 
-        .meetings-section {
-            margin-bottom: 30px;
-        }
-
-        .meeting-date {
-            color: var(--primary-color);
-            font-size: 1.5em;
-            margin-top: 20px;
-            padding: 10px;
-            background-color: rgba(33, 150, 243, 0.1);
-            border-radius: 4px;
-        }
-
-        .meeting-item {
-            margin: 15px 0;
-            padding: 15px;
-            background-color: white;
-            border-left: 4px solid var(--primary-color);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-
-        .meeting-time {
-            font-weight: bold;
-            color: var(--primary-color);
-        }
-
-        .meeting-title {
-            font-size: 1.2em;
-            margin: 5px 0;
-        }
-
-        .meeting-details {
-            color: #666;
-            font-size: 0.9em;
-        }
-
-        .analysis-section {
-            margin-top: 40px;
-        }
-
-        .analysis-header {
-            color: var(--header-color);
-            font-size: 1.8em;
-            margin-bottom: 20px;
-        }
-
-        .analysis-item {
-            padding: 15px;
-            margin: 10px 0;
-            border-radius: 4px;
-        }
-
-        .score-high {
-            background-color: rgba(76, 175, 80, 0.1);
-            border-left: 4px solid var(--success-color);
-        }
-
-        .score-medium {
-            background-color: rgba(255, 152, 0, 0.1);
-            border-left: 4px solid var(--warning-color);
-        }
-
-        .score-low {
-            background-color: rgba(244, 67, 54, 0.1);
-            border-left: 4px solid var(--danger-color);
-        }
-
-        .emoji {
-            font-size: 1.2em;
-            margin-right: 5px;
-        }
-
-        @media (max-width: 768px) {
-            .container {
-                padding: 10px;
+            analysis = {
+                'match_id': match['id'],
+                'home_team': match['home_team'],
+                'away_team': match['away_team'],
+                'start_time': match['commence_time'],
+                'value_opportunities': [],
+                'trap_indicators': [],
+                'market_analysis': {}
             }
 
-            .header {
-                font-size: 1.5em;
-            }
+            # Analiza każdego rynku
+            for market in ['h2h', 'totals', 'spreads']:
+                market_analysis = self._analyze_market(bookmaker_odds, market)
+                if market_analysis:
+                    analysis['market_analysis'][market] = market_analysis
 
-            .meeting-date {
-                font-size: 1.2em;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div id="meetings-container">
-            <div class="header">📅 System Analizy Spotkań</div>
-            <div class="meetings-section"></div>
-            <div class="analysis-section"></div>
-        </div>
-    </div>
+            # Wykrywanie value betów
+            value_opportunities = self._find_value_bets(analysis['market_analysis'])
+            if value_opportunities:
+                analysis['value_opportunities'] = value_opportunities
 
-    <script>
-        class Meeting {
-            constructor(title, date, duration, participants, priority) {
-                this.title = title;
-                this.date = date;
-                this.duration = duration;
-                this.participants = participants;
-                this.priority = priority;
-                this.score = 0;
-            }
-        }
+            # Wykrywanie pułapek bukmacherskich
+            trap_indicators = self._detect_trap_bets(analysis['market_analysis'])
+            if trap_indicators:
+                analysis['trap_indicators'] = trap_indicators
 
-        class MeetingAnalyzer {
-            constructor() {
-                this.meetingPatterns = {
-                    "Daily Standup": {
-                        frequency: "daily",
-                        typicalTime: "morning",
-                        duration: 15,
-                        participants: [4, 12],
-                        priority: 8,
-                        emoji: "⭐"
-                    },
-                    "Sprint Planning": {
-                        frequency: "bi-weekly",
-                        typicalTime: "morning",
-                        duration: 120,
-                        participants: [5, 15],
-                        priority: 9,
-                        emoji: "📅"
-                    },
-                    // Dodaj więcej wzorców spotkań tutaj
-                };
-            }
+            if analysis['value_opportunities'] or analysis['trap_indicators']:
+                value_bets.append(analysis)
 
-            generateMeetings(startDate, daysAhead) {
-                const meetings = [];
-                let currentDate = new Date(startDate);
-                const endDate = new Date(startDate);
-                endDate.setDate(endDate.getDate() + daysAhead);
+        return value_bets
 
-                while (currentDate <= endDate) {
-                    Object.entries(this.meetingPatterns).forEach(([type, pattern]) => {
-                        if (this.shouldScheduleMeeting(pattern.frequency, currentDate)) {
-                            const meetingTime = this.getMeetingTime(pattern.typicalTime);
-                            const meetingDate = new Date(currentDate);
-                            meetingDate.setHours(meetingTime.hours, meetingTime.minutes);
-
-                            const participants = this.getRandomNumber(
-                                pattern.participants[0],
-                                pattern.participants[1]
-                            );
-
-                            const meeting = new Meeting(
-                                `${pattern.emoji} ${type}`,
-                                meetingDate,
-                                pattern.duration,
-                                participants,
-                                pattern.priority
-                            );
-                            meetings.push(meeting);
-                        }
-                    });
-                    currentDate.setDate(currentDate.getDate() + 1);
-                }
-
-                return meetings.sort((a, b) => a.date - b.date);
-            }
-
-            shouldScheduleMeeting(frequency, date) {
-                switch (frequency) {
-                    case "daily":
-                        return true;
-                    case "weekly":
-                        return date.getDay() === 1;
-                    case "bi-weekly":
-                        return date.getDay() === 1 && date.getDate() <= 7;
-                    case "monthly":
-                        return date.getDate() === 1;
-                    default:
-                        return false;
-                }
-            }
-
-            getMeetingTime(typicalTime) {
-                const hours = typicalTime === "morning" 
-                    ? this.getRandomNumber(9, 11)
-                    : this.getRandomNumber(14, 16);
-                const minutes = [0, 15, 30, 45][this.getRandomNumber(0, 3)];
-                return { hours, minutes };
-            }
-
-            getRandomNumber(min, max) {
-                return Math.floor(Math.random() * (max - min + 1)) + min;
-            }
-
-            analyzeMeetings(meetings) {
-                const scores = meetings.map(meeting => ({
-                    meeting: meeting,
-                    score: this.calculateMeetingScore(meeting)
-                }));
-
-                return scores.sort((a, b) => b.score - a.score).slice(0, 7);
-            }
-
-            calculateMeetingScore(meeting) {
-                let score = meeting.priority * 10;
-
-                // Duration factor
-                if (meeting.duration <= 30) score *= 1.2;
-                else if (meeting.duration >= 180) score *= 0.8;
-
-                // Participants factor
-                if (meeting.participants >= 5 && meeting.participants <= 15) score *= 1.1;
-                else if (meeting.participants > 25) score *= 0.9;
-
-                // Time of day factor
-                const hour = meeting.date.getHours();
-                if ((hour >= 9 && hour <= 11) || (hour >= 14 && hour <= 16)) score *= 1.1;
-                else if (hour < 8 || hour > 17) score *= 0.8;
-
-                return Math.min(100, score);
-            }
-        }
-
-        class ModernInterface {
-            displayMeetings(meetings) {
-                const container = document.querySelector('.meetings-section');
-                let currentDate = null;
-
-                meetings.forEach(meeting => {
-                    const meetingDate = meeting.date.toLocaleDateString('pl-PL', {
-                        weekday: 'long',
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                    });
-
-                    if (currentDate !== meetingDate) {
-                        currentDate = meetingDate;
-                        container.innerHTML += `
-                            <div class="meeting-date">${meetingDate}</div>
-                        `;
+    def _extract_bookmaker_odds(self, match: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
+        """Ekstrakcja kursów od różnych bukmacherów"""
+        bookmaker_odds = {}
+        for bookmaker in match.get('bookmakers', []):
+            if bookmaker['key'] in self.bookmakers:
+                markets = {}
+                for market in bookmaker.get('markets', []):
+                    markets[market['key']] = {
+                        outcome['name']: outcome['price']
+                        for outcome in market['outcomes']
                     }
+                bookmaker_odds[bookmaker['key']] = markets
+        return bookmaker_odds
 
-                    container.innerHTML += `
-                        <div class="meeting-item">
-                            <div class="meeting-time">
-                                ${meeting.date.toLocaleTimeString('pl-PL', {
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                })}
-                            </div>
-                            <div class="meeting-title">${meeting.title}</div>
-                            <div class="meeting-details">
-                                Czas trwania: ${meeting.duration} min | 
-                                Uczestnicy: ${meeting.participants}
-                            </div>
-                        </div>
-                    `;
-                });
-            }
+    def _analyze_market(self, bookmaker_odds: Dict[str, Dict[str, float]], 
+                       market_type: str) -> Dict[str, Any]:
+        """Szczegółowa analiza konkretnego rynku"""
+        market_data = {}
+        odds_collection = []
 
-            displayAnalysis(analysisResults) {
-                const container = document.querySelector('.analysis-section');
-                container.innerHTML = '<div class="analysis-header">📊 Analiza Typów Spotkań</div>';
+        for bookie, markets in bookmaker_odds.items():
+            if market_type in markets:
+                market_data[bookie] = markets[market_type]
+                odds_collection.extend(markets[market_type].values())
 
-                analysisResults.forEach((result, index) => {
-                    const scoreClass = this.getScoreClass(result.score);
-                    const feedback = this.getScoreFeedback(result.score);
-                    
-                    container.innerHTML += `
-                        <div class="analysis-item ${scoreClass}">
-                            <div class="meeting-title">
-                                ${index + 1}. ${result.meeting.title}
-                            </div>
-                            <div class="meeting-details">
-                                Wynik: ${result.score.toFixed(2)}/100
-                                <br>
-                                ${feedback}
-                            </div>
-                        </div>
-                    `;
-                });
-            }
+        if not odds_collection:
+            return None
 
-            getScoreClass(score) {
-                if (score >= 80) return 'score-high';
-                if (score >= 60) return 'score-medium';
-                return 'score-low';
-            }
-
-            getScoreFeedback(score) {
-                if (score >= 80) return '🌟 Wysoka efektywność';
-                if (score >= 60) return '✅ Spełnia oczekiwania';
-                return '⚠️ Wymaga optymalizacji';
-            }
+        return {
+            'mean_odds': mean(odds_collection),
+            'std_dev': stdev(odds_collection) if len(odds_collection) > 1 else 0,
+            'margin': self._calculate_margin(market_data),
+            'outliers': self._detect_outliers(odds_collection),
+            'consensus_probability': self._calculate_consensus(market_data)
         }
 
-        // Inicjalizacja i uruchomienie aplikacji
-        const analyzer = new MeetingAnalyzer();
-        const interface = new ModernInterface();
+    def _calculate_margin(self, market_data: Dict[str, Dict[str, float]]) -> float:
+        """Obliczanie marży bukmacherskiej"""
+        margins = []
+        for bookie_odds in market_data.values():
+            implied_probs = [1/odd for odd in bookie_odds.values()]
+            margins.append(sum(implied_probs) - 1)
+        return mean(margins) if margins else 0
 
-        // Generowanie spotkań na następne 14 dni
-        const startDate = new Date();
-        const meetings = analyzer.generateMeetings(startDate, 14);
+    def _detect_outliers(self, odds: List[float]) -> List[float]:
+        """Wykrywanie odstających kursów"""
+        if len(odds) < 2:
+            return []
         
-        // Wyświetlanie harmonogramu
-        interface.displayMeetings(meetings);
+        mean_odd = mean(odds)
+        std_dev = stdev(odds)
+        return [odd for odd in odds if abs(odd - mean_odd) > 2 * std_dev]
+
+    def _find_value_bets(self, market_analysis: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Identyfikacja value betów"""
+        value_bets = []
         
-        // Analiza i wyświetlanie wyników
-        const analysisResults = analyzer.analyzeMeetings(meetings);
-        interface.displayAnalysis(analysisResults);
-    </script>
-</body>
-</html>
+        for market, analysis in market_analysis.items():
+            if analysis['std_dev'] > 0.1:  # Znacząca różnica w kursach
+                consensus_prob = analysis['consensus_probability']
+                market_odds = 1 / consensus_prob if consensus_prob > 0 else 0
+                
+                if market_odds > analysis['mean_odds'] * 1.05:  # 5% value
+                    value_bets.append({
+                        'market': market,
+                        'expected_value': market_odds / analysis['mean_odds'] - 1,
+                        'confidence': self._calculate_confidence(analysis)
+                    })
+        
+        return value_bets
+
+    def _detect_trap_bets(self, market_analysis: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Wykrywanie potencjalnych pułapek bukmacherskich"""
+        traps = []
+        
+        for market, analysis in market_analysis.items():
+            # Podejrzanie wysokie kursy
+            if analysis['outliers']:
+                traps.append({
+                    'market': market,
+                    'type': 'suspicious_odds',
+                    'severity': 'high' if analysis['std_dev'] > 0.2 else 'medium'
+                })
+            
+            # Podejrzanie niska marża
+            if analysis['margin'] < 0.02:  # Marża poniżej 2%
+                traps.append({
+                    'market': market,
+                    'type': 'suspicious_margin',
+                    'severity': 'high'
+                })
+        
+        return traps
+
+    def _calculate_confidence(self, analysis: Dict[str, Any]) -> float:
+        """Obliczanie poziomu pewności dla danej analizy"""
+        confidence = 1.0
+        
+        # Zmniejsz pewność przy wysokiej odchyłce standardowej
+        confidence *= (1 - min(analysis['std_dev'], 0.5))
+        
+        # Zmniejsz pewność przy wysokiej marży
+        confidence *= (1 - min(analysis['margin'], 0.3))
+        
+        # Zmniejsz pewność przy obecności outlierów
+        if analysis['outliers']:
+            confidence *= 0.8
+            
+        return confidence
+
+class MatchAnalyzer(OddsAnalyzer):
+    def __init__(self, odds_api_key: str, betclic_api_key: str):
+        super().__init__(odds_api_key)
+        self.betclic_api_key = betclic_api_key
+        self.console = Console()
+
+    async def analyze_matches(self, date: datetime) -> List[Dict[str, Any]]:
+        """Kompleksowa analiza meczów"""
+        odds_data = await self.fetch_odds()
+        value_bets = self.analyze_value_bets(odds_data)
+        
+        analyzed_matches = []
+        for match in value_bets:
+            match_analysis = {
+                'basic_info': {
+                    'match_id': match['match_id'],
+                    'teams': f"{match['home_team']} vs {match['away_team']}",
+                    'date': match['start_time']
+                },
+                'odds_analysis': {
+                    'value_opportunities': match['value_opportunities'],
+                    'trap_warnings': match['trap_indicators']
+                },
+                'confidence_score': self._calculate_match_confidence(match)
+            }
+            analyzed_matches.append(match_analysis)
+        
+        return sorted(analyzed_matches, 
+                     key=lambda x: x['confidence_score'], 
+                     reverse=True)
+
+    def display_analysis(self, analyzed_matches: List[Dict[str, Any]]):
+        """Wyświetlanie wyników analizy"""
+        table = Table(title="🎯 Analiza Value Betów i Pułapek Bukmacherskich")
+        
+        table.add_column("Mecz", style="cyan")
+        table.add_column("Value Bety", style="green")
+        table.add_column("Ostrzeżenia", style="red")
+        table.add_column("Pewność", style="yellow")
+        
+        for match in analyzed_matches:
+            value_bets = "\n".join([
+                f"📈 {v['market']}: {v['expected_value']:.1%} EV"
+                for v in match['odds_analysis']['value_opportunities']
+            ])
+            
+            warnings = "\n".join([
+                f"⚠️ {t['market']}: {t['type']} ({t['severity']})"
+                for t in match['odds_analysis']['trap_warnings']
+            ])
+            
+            confidence = match['confidence_score']
+            confidence_display = "🌟" * int(confidence * 5)
+            
+            table.add_row(
+                match['basic_info']['teams'],
+                value_bets or "Brak",
+                warnings or "Brak ostrzeżeń",
+                f"{confidence_display} ({confidence:.1%})"
+            )
+        
+        self.console.print(table)
+
+async def main():
+    analyzer = MatchAnalyzer(
+        odds_api_key="631900acd2063f2fa684e2257dfa5588",
+        betclic_api_key="your_betclic_api_key"
+    )
+    
+    while True:
+        rprint("[bold cyan]🎯 System Analizy Value Betów[/bold cyan]")
+        rprint("\n1. 📅 Analiza na dziś")
+        rprint("2. 📊 Analiza na jutro")
+        rprint("3. ❌ Wyjście")
+        
+        choice = input("\nWybierz opcję: ")
+        
+        if choice == "1":
+            analyzed_matches = await analyzer.analyze_matches(datetime.now())
+            analyzer.display_analysis(analyzed_matches)
+        elif choice == "2":
+            analyzed_matches = await analyzer.analyze_matches(
+                datetime.now() + timedelta(days=1)
+            )
+            analyzer.display_analysis(analyzed_matches)
+        elif choice == "3":
+            break
+
+if __name__ == "__main__":
+    asyncio.run(main())
