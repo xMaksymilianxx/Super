@@ -471,6 +471,56 @@
             matchesContainer.innerHTML = '';
 
             const matches = await fetchMatches(selectedDate, selectedLeague);
+
+            if (!matches || matches.length === 0) {
+                systemStatus.textContent = 'Brak meczów do analizy.';
+                matchesContainer.innerHTML = `
+                    <div class="error-message">
+                        <p>⚠️ Brak dostępnych meczów na wybraną datę.</p>
+                    </div>`;
+                return;
+            }
+
+            systemStatus.textContent = 'Analiza meczów...';
+            const analyzedMatches = await analyzeAllMatches(matches, analysisDepth);
+
+            if (!analyzedMatches || analyzedMatches.length === 0) {
+                matchesContainer.innerHTML = `
+                    <div class="error-message">
+                        <p>⚠️ Nie udało się przeprowadzić analizy meczów.</p>
+                    </div>`;
+                systemStatus.textContent = 'Analiza nie powiodła się.';
+                return;
+            }
+
+            displayResults(analyzedMatches);
+            systemStatus.textContent = 'Analiza zakończona.';
+        } catch (error) {
+            console.error('Błąd podczas analizy:', error);
+            matchesContainer.innerHTML = `
+                <div class="error-message">
+                    <p>⚠️ Wystąpił błąd podczas analizy meczów.</p>
+                    <p>${error.message}</p>
+                </div>`;
+            systemStatus.textContent = 'Wystąpił błąd.';
+        } finally {
+            loadingIndicator.style.display = 'none';
+        }
+    }
+    
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const matchesContainer = document.getElementById('matchesContainer');
+        const systemStatus = document.getElementById('systemStatus');
+        const selectedDate = document.getElementById('dateSelect').value;
+        const selectedLeague = document.getElementById('leagueSelect').value;
+        const analysisDepth = document.getElementById('analysisDepth').value;
+
+        try {
+            loadingIndicator.style.display = 'block';
+            systemStatus.textContent = 'Pobieranie danych...';
+            matchesContainer.innerHTML = '';
+
+            const matches = await fetchMatches(selectedDate, selectedLeague);
             
             if (!matches || matches.length === 0) {
                 throw new Error('Brak dostępnych meczów na wybrany dzień');
@@ -496,6 +546,47 @@
     }
 
     async function fetchMatches(date, league) {
+        try {
+            const formattedDate = new Date(date).toISOString().split('T')[0];
+            const currentSeason = new Date().getFullYear();
+
+            let url = new URL(`${API_URL}/fixtures`);
+            url.searchParams.append('date', formattedDate);
+            url.searchParams.append('season', currentSeason);
+            url.searchParams.append('timezone', 'Europe/Warsaw');
+
+            if (league !== 'all') {
+                url.searchParams.append('league', league);
+            }
+
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'x-rapidapi-host': 'v3.football.api-sports.io',
+                    'x-rapidapi-key': API_KEY
+                }
+            });
+
+            if (!response.ok) {
+                console.error(`Błąd API (${response.status}): ${response.statusText}`);
+                throw new Error('Nie udało się pobrać danych z API.');
+            }
+
+            const data = await response.json();
+
+            if (!data.response || data.response.length === 0) {
+                console.warn('Brak danych o meczach dla wybranej daty.');
+                return [];
+            }
+
+            return data.response;
+        } catch (error) {
+            console.error('Błąd w fetchMatches:', error);
+            alert('Wystąpił problem z pobieraniem danych z API. Sprawdź połączenie internetowe i spróbuj ponownie.');
+            return [];
+        }
+    }
+    
         const formattedDate = new Date(date).toISOString().split('T')[0];
         const currentSeason = new Date().getFullYear();
         
