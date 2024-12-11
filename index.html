@@ -47,42 +47,38 @@
     </div>
 
     <script>
+        const puppeteer = require('puppeteer'); // Wymaga instalacji Puppeteer
+
         async function fetchMatches(date) {
-            // Link do Sofascore dla wybranej daty
             const url = `https://www.sofascore.com/pl/pilka-nozna/${date}`;
             console.log(`Pobieranie danych z URL: ${url}`);
 
+            const browser = await puppeteer.launch();
+            const page = await browser.newPage();
+
             try {
-                const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error(`Błąd podczas pobierania danych. Status: ${response.status}`);
-                }
+                await page.goto(url, { waitUntil: 'networkidle2' });
 
-                const html = await response.text();
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(html, 'text/html');
+                // Pobranie danych o meczach
+                const matches = await page.evaluate(() => {
+                    let matchData = [];
+                    document.querySelectorAll('.event-card').forEach(match => {
+                        const homeTeam = match.querySelector('.home-team .team-name')?.textContent.trim();
+                        const awayTeam = match.querySelector('.away-team .team-name')?.textContent.trim();
 
-                // Pobranie elementów meczów (przykład selektora)
-                const matchElements = doc.querySelectorAll('.event-card');
-                let matches = [];
-
-                matchElements.forEach(match => {
-                    const homeTeam = match.querySelector('.home-team .team-name')?.textContent.trim();
-                    const awayTeam = match.querySelector('.away-team .team-name')?.textContent.trim();
-
-                    if (homeTeam && awayTeam) {
-                        matches.push({ homeTeam, awayTeam });
-                    }
+                        if (homeTeam && awayTeam) {
+                            matchData.push({ homeTeam, awayTeam });
+                        }
+                    });
+                    return matchData;
                 });
 
-                if (matches.length === 0) {
-                    console.warn('Nie znaleziono żadnych meczów.');
-                }
-
+                await browser.close();
                 return matches;
 
             } catch (error) {
                 console.error('Błąd podczas pobierania danych:', error.message);
+                await browser.close();
                 return [];
             }
         }
