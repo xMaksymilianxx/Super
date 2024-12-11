@@ -209,11 +209,11 @@
                     <option value="0.8">Pewność > 80%</option>
                     <option value="0.9">Pewność > 90%</option>
                 </select>
-                <select id="marketFilter" class="select-input">
-                    <option value="all">Wszystkie rynki</option>
-                    <option value="1X2">1X2</option>
-                    <option value="over_under">Over/Under</option>
-                    <option value="btts">Obie strzelą</option>
+                <select id="sportFilter" class="select-input">
+                    <option value="all">Wszystkie sporty</option>
+                    <option value="soccer">Piłka nożna</option>
+                    <option value="basketball">Koszykówka</option>
+                    <option value="icehockey">Hokej</option>
                 </select>
             </div>
 
@@ -244,52 +244,79 @@
     <script>
         const API_KEY = "631900acd2063f2fa684e2257dfa5588";
         const ODDS_API_URL = "https://api.the-odds-api.com/v4/sports";
+        const SPORTS = ['soccer', 'basketball', 'icehockey'];
         let globalStats = {
             totalMatches: 0,
             valueBets: 0,
             trapBets: 0
         };
 
+        // Cache dla wyników API
+        const apiCache = new Map();
+
         async function analyzeMecze() {
             const loadingIndicator = document.getElementById('loadingIndicator');
             const matchesContainer = document.getElementById('matchesContainer');
             const selectedDate = document.getElementById('dateSelect').value;
             const confidenceFilter = parseFloat(document.getElementById('confidenceFilter').value);
-            const marketFilter = document.getElementById('marketFilter').value;
+            const sportFilter = document.getElementById('sportFilter').value;
 
             loadingIndicator.style.display = 'block';
             matchesContainer.innerHTML = '';
             resetGlobalStats();
 
             try {
-                const sports = ['soccer', 'basketball', 'baseball', 'icehockey'];
                 let allMatches = [];
+                const selectedSports = sportFilter === 'all' ? SPORTS : [sportFilter];
 
-                for (const sport of sports) {
-                    const response = await fetch(
-                        `${ODDS_API_URL}/${sport}/odds/?apiKey=${API_KEY}&regions=eu&markets=h2h,totals,spreads`
-                    );
-                    
-                    if (!response.ok) {
-                        throw new Error(`Błąd API dla ${sport}: ${response.statusText}`);
+                for (const sport of selectedSports) {
+                    try {
+                        const cacheKey = `${sport}_${selectedDate}`;
+                        let sportData;
+
+                        if (apiCache.has(cacheKey)) {
+                            sportData = apiCache.get(cacheKey);
+                        } else {
+                            const response = await fetch(
+                                `${ODDS_API_URL}/${sport}/odds/?apiKey=${API_KEY}&regions=eu&markets=h2h,totals`
+                            );
+                            
+                            if (!response.ok) {
+                                console.warn(`Pominięto ${sport} - błąd API: ${response.status}`);
+                                continue;
+                            }
+
+                            sportData = await response.json();
+                            apiCache.set(cacheKey, sportData);
+                            
+                            // Dodajemy opóźnienie między zapytaniami
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                        }
+
+                        allMatches = [...allMatches, ...sportData];
+                    } catch (sportError) {
+                        console.warn(`Błąd podczas pobierania danych dla ${sport}:`, sportError);
+                        continue;
                     }
+                }
 
-                    const data = await response.json();
-                    allMatches = [...allMatches, ...data];
+                if (allMatches.length === 0) {
+                    throw new Error('Nie udało się pobrać żadnych meczów. Spróbuj ponownie później.');
                 }
 
                 const analyzedMatches = analyzeOddsData(allMatches, selectedDate);
-                const filteredMatches = filterMatches(analyzedMatches, confidenceFilter, marketFilter);
+                const filteredMatches = filterMatches(analyzedMatches, confidenceFilter);
 
                 updateGlobalStats(filteredMatches);
                 displayMatches(filteredMatches);
 
             } catch (error) {
-                console.error('Błąd:', error);
+                console.error('Błąd główny:', error);
                 matchesContainer.innerHTML = `
                     <div class="error-message">
                         <p>⚠️ Wystąpił błąd podczas analizy meczów</p>
                         <p>Szczegóły: ${error.message}</p>
+                        <p>Spróbuj ponownie za kilka minut lub zmień wybrane parametry.</p>
                     </div>`;
             } finally {
                 loadingIndicator.style.display = 'none';
@@ -297,62 +324,96 @@
         }
 
         function analyzeOddsData(matches, selectedDate) {
-            return matches.map(match => {
-                const bookmakerOdds = extractBookmakerOdds(match);
-                const valueOpportunities = findValueBets(bookmakerOdds);
-                const trapWarnings = detectTrapBets(bookmakerOdds);
-                
-                return {
-                    basic_info: {
-                        teams: `${match.home_team} vs ${match.away_team}`,
-                        date: match.commence_time,
-                        sport: match.sport_key
-                    },
-                    odds_analysis: {
-                        value_opportunities: valueOpportunities,
-                        trap_warnings: trapWarnings,
-                        average_odds: calculateAverageOdds(bookmakerOdds),
-                        margin: calculateMargin(bookmakerOdds)
-                    },
-                    confidence_score: calculateConfidenceScore(valueOpportunities, trapWarnings)
-                };
+            return matches
+                .filter(match => {
+                    const matchDate = new Date(match.commence_time);
+                    const selected = new Date(selectedDate);
+                    return matchDate.toDateString() === selected.toDateString();
+                })
+                .map(match => {
+                    const bookmakerOdds = extractBookmakerOdds(match);
+                    const valueOpportunities = findValueBets(bookmakerOdds);
+                    const trapWarnings = detectTrapBets(bookmakerOdds);
+                    
+                    return {
+                        basic_info: {
+                            teams: `${match.home_team} vs ${match.away_team}`,
+                            date: match.commence_time,
+                            sport: match.sport_key
+                        },
+                        odds_analysis: {
+                            value_opportunities: valueOpportunities,
+                            trap_warnings: trapWarnings,
+                            average_odds: calculateAverageOdds(bookmakerOdds),
+                            margin: calculateMargin(bookmakerOdds)
+                        },
+                        confidence_score: calculateConfidenceScore(valueOpportunities, trapWarnings)
+                    };
+                });
+        }
+
+        function extractBookmakerOdds(match) {
+            const bookmakerOdds = {};
+            match.bookmakers?.forEach(bookmaker => {
+                if (!bookmakerOdds[bookmaker.key]) {
+                    bookmakerOdds[bookmaker.key] = {};
+                }
+                bookmaker.markets?.forEach(market => {
+                    bookmakerOdds[bookmaker.key][market.key] = market.outcomes.reduce((acc, outcome) => {
+                        acc[outcome.name] = outcome.price;
+                        return acc;
+                    }, {});
+                });
             });
+            return bookmakerOdds;
         }
 
-        function filterMatches(matches, confidenceThreshold, marketFilter) {
-            return matches.filter(match => {
-                const meetsConfidence = match.confidence_score >= confidenceThreshold;
-                const meetsMarket = marketFilter === 'all' || 
-                    match.odds_analysis.value_opportunities.some(v => v.market.includes(marketFilter));
-                return meetsConfidence && meetsMarket;
+        function findValueBets(bookmakerOdds) {
+            const valueOpportunities = [];
+            const averageOdds = calculateAverageOdds(bookmakerOdds);
+            
+            Object.entries(bookmakerOdds).forEach(([bookmaker, markets]) => {
+                Object.entries(markets).forEach(([market, odds]) => {
+                    Object.entries(odds).forEach(([outcome, price]) => {
+                        const avgOdd = averageOdds[market]?.[outcome];
+                        if (avgOdd && price > avgOdd * 1.05) {
+                            valueOpportunities.push({
+                                market: `${market} - ${outcome}`,
+                                expected_value: (price / avgOdd - 1)
+                            });
+                        }
+                    });
+                });
             });
+            
+            return valueOpportunities;
         }
 
-        function resetGlobalStats() {
-            globalStats = {
-                totalMatches: 0,
-                valueBets: 0,
-                trapBets: 0
-            };
+        function detectTrapBets(bookmakerOdds) {
+            const trapWarnings = [];
+            const averageOdds = calculateAverageOdds(bookmakerOdds);
+            
+            Object.entries(bookmakerOdds).forEach(([bookmaker, markets]) => {
+                Object.entries(markets).forEach(([market, odds]) => {
+                    Object.entries(odds).forEach(([outcome, price]) => {
+                        const avgOdd = averageOdds[market]?.[outcome];
+                        if (avgOdd && price > avgOdd * 1.2) {
+                            trapWarnings.push({
+                                market: `${market} - ${outcome}`,
+                                type: 'suspicious_odds',
+                                severity: 'high'
+                            });
+                        }
+                    });
+                });
+            });
+            
+            return trapWarnings;
         }
 
-        function updateGlobalStats(matches) {
-            globalStats.totalMatches = matches.length;
-            globalStats.valueBets = matches.reduce(
-                (sum, match) => sum + match.odds_analysis.value_opportunities.length, 0
-            );
-            globalStats.trapBets = matches.reduce(
-                (sum, match) => sum + match.odds_analysis.trap_warnings.length, 0
-            );
-
-            document.getElementById('totalMatches').textContent = globalStats.totalMatches;
-            document.getElementById('totalValueBets').textContent = globalStats.valueBets;
-        }
-
-        // Pozostałe funkcje pomocnicze pozostają bez zmian
-        
-        // Inicjalizacja daty na dzisiaj
-        document.getElementById('dateSelect').valueAsDate = new Date();
-    </script>
-</body>
-</html>
+        function calculateAverageOdds(bookmakerOdds) {
+            const allOdds = {};
+            
+            Object.values(bookmakerOdds).forEach(markets => {
+                Object.entries(markets).forEach(([market, odds]) => {
+                    if (!allOdds[market]) allOdds[market] = {};
