@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zaawansowany System Analizy Meczów</title>
+    <title>Zaawansowany System Analizy Mecz贸w</title>
     <style>
         :root {
             --primary-color: #2196F3;
@@ -227,12 +227,12 @@
 <body>
     <div class="container">
         <header class="header">
-            <h1>🎯 Zaawansowany System Analizy Meczów</h1>
+            <h1>馃幆 Zaawansowany System Analizy Mecz贸w</h1>
         </header>
 
         <div class="control-panel">
             <div class="control-card">
-                <h2>📅 Wybór daty</h2>
+                <h2>馃搮 Wyb贸r daty</h2>
                 <input type="date" id="dateSelect" class="date-input">
                 <div id="dateWarning" class="date-warning"></div>
                 <select id="leagueSelect" class="league-select">
@@ -248,7 +248,7 @@
             </div>
             
             <div class="control-card">
-                <h2>⚙️ Status systemu</h2>
+                <h2>鈿欙笍 Status systemu</h2>
                 <div id="systemStatus" class="status-container">
                     Gotowy do analizy
                 </div>
@@ -259,29 +259,29 @@
             </div>
 
             <div class="control-card">
-                <h2>📊 Filtry analizy</h2>
+                <h2>馃搳 Filtry analizy</h2>
                 <select id="analysisDepth" class="select-input">
                     <option value="basic">Podstawowa</option>
                     <option value="advanced" selected>Zaawansowana</option>
-                    <option value="full">Pełna</option>
+                    <option value="full">Pe艂na</option>
                 </select>
                 <div id="analysisStats" class="analysis-stats"></div>
             </div>
         </div>
 
         <div id="loadingIndicator" class="loading" style="display: none;">
-            ⌛ Trwa kompleksowa analiza meczów...
+            鈱� Trwa kompleksowa analiza mecz贸w...
         </div>
 
         <div id="matchesContainer" class="match-grid">
-            <!-- Tutaj będą wyświetlane analizowane mecze -->
+            <!-- Tutaj b臋d膮 wy艣wietlane analizowane mecze -->
         </div>
     </div>
 <script>
     const API_KEY = 'ac0417c6e0dcfa236b146b9585892c9a';
     const API_URL = 'https://v3.football.api-sports.io';
 
-    // Zaawansowany system pamięci
+    // Zaawansowany system pami臋ci
     class MemorySystem {
         constructor() {
             this.memory = this.loadMemory();
@@ -310,7 +310,25 @@
             this.cleanOldData();
         }
 
-        cleanOldData() {
+        
+    cleanOldData() {
+        const expiryDate = new Date();
+        expiryDate.setDate(expiryDate.getDate() - 30);
+
+        Object.keys(this.memory.predictions).forEach(key => {
+            const timestamp = new Date(this.memory.predictions[key].timestamp);
+            if (timestamp < expiryDate) {
+                delete this.memory.predictions[key];
+            }
+        });
+
+        // Limitowanie liczby przechowywanych predykcji
+        const keys = Object.keys(this.memory.predictions);
+        if (keys.length > 1000) {
+            keys.slice(0, keys.length - 1000).forEach(key => delete this.memory.predictions[key]);
+        }
+    }
+    
             const thirtyDaysAgo = new Date();
             thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
@@ -383,13 +401,13 @@
                 return this.memory.similarityMatrix[key];
             }
 
-            // Podstawowe kryteria podobieństwa
+            // Podstawowe kryteria podobie艅stwa
             let similarity = 0;
             
             // Ta sama liga
             if (match1.league.id === match2.league.id) similarity += 0.3;
             
-            // Te same drużyny
+            // Te same dru偶yny
             if (match1.teams.home.id === match2.teams.home.id) similarity += 0.35;
             if (match1.teams.away.id === match2.teams.away.id) similarity += 0.35;
 
@@ -436,7 +454,7 @@
         }
     }
 
-    // Inicjalizacja systemu pamięci
+    // Inicjalizacja systemu pami臋ci
     const memorySystem = new MemorySystem();
 
     async function startAnalysis() {
@@ -455,23 +473,23 @@
             const matches = await fetchMatches(selectedDate, selectedLeague);
             
             if (!matches || matches.length === 0) {
-                throw new Error('Brak dostępnych meczów na wybrany dzień');
+                throw new Error('Brak dost臋pnych mecz贸w na wybrany dzie艅');
             }
 
-            systemStatus.textContent = 'Analiza meczów...';
+            systemStatus.textContent = 'Analiza mecz贸w...';
             const analyzedMatches = await analyzeAllMatches(matches, analysisDepth);
             displayResults(analyzedMatches);
             updateAccuracyDisplay();
-            systemStatus.textContent = 'Analiza zakończona';
+            systemStatus.textContent = 'Analiza zako艅czona';
 
         } catch (error) {
             console.error('Error:', error);
             matchesContainer.innerHTML = `
                 <div class="error-message">
-                    <p>⚠️ Wystąpił błąd podczas analizy</p>
-                    <p>Szczegóły: ${error.message}</p>
+                    <p>鈿狅笍 Wyst膮pi艂 b艂膮d podczas analizy</p>
+                    <p>Szczeg贸艂y: ${error.message}</p>
                 </div>`;
-            systemStatus.textContent = 'Wystąpił błąd';
+            systemStatus.textContent = 'Wyst膮pi艂 b艂膮d';
         } finally {
             loadingIndicator.style.display = 'none';
         }
@@ -499,19 +517,19 @@
         });
 
         if (!response.ok) {
-            throw new Error(`Błąd API (${response.status}): ${response.statusText}`);
+            throw new Error(`B艂膮d API (${response.status}): ${response.statusText}`);
         }
 
         const data = await response.json();
         
         if (!data.response || data.response.length === 0) {
-            throw new Error('Brak dostępnych meczów na wybrany dzień. Wybierz inną datę.');
+            throw new Error('Brak dost臋pnych mecz贸w na wybrany dzie艅. Wybierz inn膮 dat臋.');
         }
 
         return data.response;
     }
 
-    // Inicjalizacja przy załadowaniu strony
+    // Inicjalizacja przy za艂adowaniu strony
     document.addEventListener('DOMContentLoaded', () => {
         const today = new Date();
         const dateInput = document.getElementById('dateSelect');
@@ -543,7 +561,7 @@
                     memorySystem.improvePredictionConfidence(pred, match)
                 );
                 
-                // Sortowanie i wybór top 7 najlepszych typów
+                // Sortowanie i wyb贸r top 7 najlepszych typ贸w
                 const topPredictions = improvedPredictions
                     .sort((a, b) => b.confidence - a.confidence)
                     .slice(0, 7);
@@ -556,7 +574,7 @@
                     predictions: topPredictions
                 };
             } catch (error) {
-                console.error(`Błąd analizy meczu ${match.fixture.id}:`, error);
+                console.error(`B艂膮d analizy meczu ${match.fixture.id}:`, error);
                 return null;
             }
         })).then(results => results.filter(result => result !== null));
@@ -601,7 +619,7 @@
             predictFirstHalf(analysis, match),
             predictHandicap(analysis, match),
             predictDoubleChance(analysis, match)
-        ].filter(pred => pred.confidence >= 0.6); // Filtrowanie tylko wysokiej pewności
+        ].filter(pred => pred.confidence >= 0.6); // Filtrowanie tylko wysokiej pewno艣ci
     }
 
     function predictWinner(analysis, match) {
@@ -619,19 +637,19 @@
         if (totalStrengthHome > totalStrengthAway * 1.2) {
             prediction = '1';
             confidence = Math.min(0.95, (totalStrengthHome / totalStrengthAway) * 0.8);
-            reason = 'Znacząca przewaga gospodarzy w kluczowych statystykach';
+            reason = 'Znacz膮ca przewaga gospodarzy w kluczowych statystykach';
         } else if (totalStrengthAway > totalStrengthHome * 1.2) {
             prediction = '2';
             confidence = Math.min(0.95, (totalStrengthAway / totalStrengthHome) * 0.8);
-            reason = 'Znacząca przewaga gości w kluczowych statystykach';
+            reason = 'Znacz膮ca przewaga go艣ci w kluczowych statystykach';
         } else {
             prediction = 'X';
             confidence = 0.7;
-            reason = 'Wyrównane statystyki obu drużyn';
+            reason = 'Wyr贸wnane statystyki obu dru偶yn';
         }
 
         return {
-            type: 'Zwycięzca',
+            type: 'Zwyci臋zca',
             prediction,
             confidence,
             reason,
@@ -652,7 +670,7 @@
 
         const expectedGoals = (avgGoals * 0.4 + h2hGoals * 0.3 + formTrend * 0.2 + weatherImpact * 0.1);
         
-        const prediction = expectedGoals > 2.5 ? 'Powyżej 2.5' : 'Poniżej 2.5';
+        const prediction = expectedGoals > 2.5 ? 'Powy偶ej 2.5' : 'Poni偶ej 2.5';
         const confidence = Math.min(0.95, Math.abs(expectedGoals - 2.5) * 0.4);
         const trend = formTrend > 0 ? 'wzrostowy' : 'spadkowy';
 
@@ -660,7 +678,7 @@
             type: 'Gole',
             prediction,
             confidence,
-            reason: `Średnia bramek: ${expectedGoals.toFixed(2)}, trend: ${trend}`,
+            reason: `艢rednia bramek: ${expectedGoals.toFixed(2)}, trend: ${trend}`,
             details: {
                 expectedGoals,
                 formTrend,
@@ -680,17 +698,17 @@
             const predictionsList = predictions
                 .map((pred, index) => {
                     const confidence = (pred.confidence * 100).toFixed(1);
-                    const stars = '⭐'.repeat(Math.round(pred.confidence * 5));
+                    const stars = '猸�'.repeat(Math.round(pred.confidence * 5));
                     return `
                         <div class="best-bet">
                             <h4>#${index + 1} ${pred.type}</h4>
                             <p>Typ: <strong>${pred.prediction}</strong></p>
-                            <p>Pewność: ${confidence}% ${stars}</p>
+                            <p>Pewno艣膰: ${confidence}% ${stars}</p>
                             <p>Uzasadnienie: ${pred.reason}</p>
                             <div class="confidence-meter">
                                 <div class="confidence-value" style="width: ${confidence}%"></div>
                             </div>
-                            ${pred.improvedByMemory ? '<p class="memory-improved">✨ Ulepszone przez system uczenia</p>' : ''}
+                            ${pred.improvedByMemory ? '<p class="memory-improved">鉁� Ulepszone przez system uczenia</p>' : ''}
                         </div>`;
                 })
                 .join('');
@@ -698,10 +716,10 @@
             card.innerHTML = `
                 <div class="match-header">
                     <h3>${match.teams.home.name} vs ${match.teams.away.name}</h3>
-                    <div>🕒 ${new Date(match.fixture.date).toLocaleString()}</div>
+                    <div>馃晵 ${new Date(match.fixture.date).toLocaleString()}</div>
                 </div>
                 <div class="prediction-section">
-                    <h4>Top 7 typów na ten mecz:</h4>
+                    <h4>Top 7 typ贸w na ten mecz:</h4>
                     ${predictionsList}
                 </div>
             `;
@@ -720,7 +738,7 @@
             const overallAccuracy = ((stats.correct / stats.total) * 100).toFixed(1);
             accuracyStats.innerHTML = `
                 <div class="accuracy-info">
-                    <p>Ogólna skuteczność: ${overallAccuracy}%</p>
+                    <p>Og贸lna skuteczno艣膰: ${overallAccuracy}%</p>
                     <p>Liczba analiz: ${stats.total}</p>
                 </div>
             `;
