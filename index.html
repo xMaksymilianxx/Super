@@ -64,6 +64,8 @@
     </div>
 
     <script>
+        const API_KEY = 'c13c38ce363b4994afaa6608c9fc80e2';
+
         async function fetchAndAnalyzeMatches() {
             const dateInput = document.getElementById('date').value.trim();
             const resultsDiv = document.getElementById('results');
@@ -79,9 +81,14 @@
             }
 
             try {
-                // Pobierz dane z backendu
-                const url = `/api/matches?date=${dateInput}`;
-                const response = await fetch(url);
+                // Endpoint API Football-Data.org
+                const url = `https://api.football-data.org/v4/matches?dateFrom=${dateInput}&dateTo=${dateInput}`;
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'X-Auth-Token': API_KEY
+                    }
+                });
 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -89,7 +96,7 @@
 
                 const data = await response.json();
 
-                // Wyświetl dane w interfejsie użytkownika
+                // Sprawdź, czy są dostępne mecze
                 if (data.matches && data.matches.length > 0) {
                     let matchesHTML = '';
                     let analyzedMatches = [];
@@ -97,12 +104,14 @@
                     data.matches.forEach(match => {
                         const homeTeam = match.homeTeam.name || "Nieznany";
                         const awayTeam = match.awayTeam.name || "Nieznany";
+                        const matchTime = new Date(match.utcDate).toLocaleString();
+                        const status = match.status;
 
                         matchesHTML += `
                             <div class="result">
                                 <strong>${homeTeam} vs ${awayTeam}</strong><br>
-                                Czas rozpoczęcia: ${new Date(match.utcDate).toLocaleString()}<br>
-                                Status meczu: ${match.status}<br>
+                                Czas rozpoczęcia: ${matchTime}<br>
+                                Status meczu: ${status}<br>
                             </div>
                         `;
 
@@ -110,4 +119,50 @@
                         analyzedMatches.push({
                             homeTeam,
                             awayTeam,
-                            status: match
+                            status,
+                            utcDate: match.utcDate
+                        });
+                    });
+
+                    resultsDiv.innerHTML = matchesHTML;
+
+                    // Analiza najlepszych typów
+                    analyzeMatches(analyzedMatches);
+                } else {
+                    resultsDiv.innerHTML = '<p>Brak meczów dla wybranej daty.</p>';
+                }
+                
+            } catch (error) {
+                resultsDiv.innerHTML = `Błąd podczas ładowania danych z API: ${error.message}`;
+                console.error(error); // Wyświetl szczegóły błędu w konsoli
+            }
+        }
+
+        function analyzeMatches(matches) {
+            const summaryDiv = document.getElementById('summary');
+            
+            if (matches.length === 0) {
+                summaryDiv.innerHTML = '<p>Brak meczów do analizy.</p>';
+                return;
+            }
+
+            summaryDiv.innerHTML = '<h3>Najlepsze Typy:</h3>';
+
+            // Przykładowa analiza - wybór pierwszych kilku meczów
+            const topMatches = matches.slice(0, Math.min(matches.length, 5)); // Maksymalnie 5 najlepszych meczów
+
+            topMatches.forEach(match => {
+                const prediction = `Typ na ${match.homeTeam} - wygra z kursem 1.90`; // Symulowana analiza
+
+                summaryDiv.innerHTML += `
+                    <div class="result">
+                        <strong>${match.homeTeam} vs ${match.awayTeam}</strong><br>
+                        Prognoza: ${prediction}<br>
+                        Status meczu: ${match.status}<br>
+                    </div>
+                `;
+            });
+        }
+    </script>
+</body>
+</html>
