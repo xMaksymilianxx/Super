@@ -70,52 +70,10 @@
             padding: 20px;
             border-radius: 10px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            transition: transform 0.3s ease;
         }
 
-        .match-card:hover {
-            transform: translateY(-5px);
-        }
-
-        .prediction-section {
-            margin-top: 15px;
-            padding: 15px;
-            background: rgba(33, 150, 243, 0.1);
-            border-radius: 5px;
-        }
-
-        .best-bet {
-            padding: 15px;
-            margin-top: 15px;
-            border-left: 4px solid var(--success-color);
-            background: rgba(76, 175, 80, 0.1);
-            border-radius: 0 5px 5px 0;
-            transition: all 0.3s ease;
-        }
-
-        .best-bet:hover {
-            transform: translateX(5px);
-            background: rgba(76, 175, 80, 0.2);
-        }
-
-        .confidence-meter {
-            height: 6px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 3px;
-            margin-top: 8px;
-            overflow: hidden;
-        }
-
-        .confidence-value {
-            height: 100%;
-            background: linear-gradient(to right, var(--success-color), #45c4ff);
-            border-radius: 3px;
-            transition: width 0.6s ease;
-        }
-
-        .memory-improved {
-            font-weight: bold;
-            color: var(--primary-color);
+        .error-message {
+            color: var(--danger-color);
         }
     </style>
 </head>
@@ -128,205 +86,106 @@
         <div class="control-panel">
             <div class="control-card">
                 <h2>📅 Wybór daty</h2>
-                <input type="date" id="dateSelect" class="date-input" />
-                <select id="leagueSelect" class="league-select">
-                    <option value="all">Wszystkie ligi</option>
-                    <option value="39">Premier League</option>
-                    <option value="140">La Liga</option>
-                    <option value="135">Serie A</option>
-                    <option value="78">Bundesliga</option>
-                    <option value="61">Ligue 1</option>
-                    <option value="106">Ekstraklasa</option>
-                </select>
-                <button id="analyzeButton" class="btn">Analizuj</button>
-            </div>
-
-            <div class="control-card">
-                <h2>⚙️ Status systemu</h2>
-                <div id="systemStatus" class="status-container">Gotowy do analizy</div>
+                <input type="date" id="dateSelect" />
+                <button id="analyzeButton">Analizuj</button>
+                <div id="systemStatus">Gotowy do analizy</div>
             </div>
         </div>
 
-        <div id="loadingIndicator" class="loading" style="display: none;">
-            ⌛ Trwa kompleksowa analiza meczów...
-        </div>
+        <div id="loadingIndicator" style="display:none;">⌛ Trwa analiza meczów...</div>
 
-        <div id="matchesContainer" class="match-grid">
-            <!-- Tutaj będą wyświetlane analizowane mecze -->
-        </div><script>
-        const API_KEY = 'ac0417c6e0dcfa236b146b9585892c9a';
-        const API_URL = 'https://v3.football.api-sports.io';
-        let predictionMemory = []; // Pamięć przewidywań
+        <div id="matchesContainer" class="match-grid"></div>
+    </div>
 
-        // Funkcja do przekształcenia daty z formatu YYYY-MM-DD na YYYY-MM-DD
-        function formatDateToAPI(date) {
-            const [year, month, day] = date.split('-');
-            return `${year}-${month}-${day}`;  // Poprawiony format daty
-        }
+    <script>
+        async function fetchMatches(date) {
+            const url = date === getCurrentDate()
+                ? 'https://www.sofascore.com/pl/'
+                : `https://www.sofascore.com/pl/pilka-nozna/${date}`;
 
-        // Pobieranie danych o meczach
-        async function fetchMatches(date, league) {
-            const url = new URL(`${API_URL}/fixtures`);
-            url.searchParams.append('date', date);  // Data w formacie YYYY-MM-DD
-            url.searchParams.append('season', '2024');
-            url.searchParams.append('timezone', 'Europe/Warsaw');  // Ustawiamy strefę czasową
+            try {
+                const response = await fetch(url);
+                const html = await response.text();
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
 
-            if (league !== 'all') {
-                url.searchParams.append('league', league);  // Dodajemy ID ligi, jeśli wybrano inną
-            }
+                let matches = [];
+                const matchElements = doc.querySelectorAll('.event-card');
 
-            // Logowanie zapytania, aby upewnić się, że wszystko jest poprawnie skonstruowane
-            console.log('URL:', url.toString());
+                matchElements.forEach(match => {
+                    const homeTeam = match.querySelector('.home-team .team-name')?.textContent.trim();
+                    const awayTeam = match.querySelector('.away-team .team-name')?.textContent.trim();
 
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: {
-                    'x-rapidapi-host': 'v3.football.api-sports.io',
-                    'x-rapidapi-key': API_KEY
-                }
-            });
+                    if (homeTeam && awayTeam) {
+                        matches.push({ homeTeam, awayTeam });
+                    }
+                });
 
-            if (!response.ok) {
-                console.error(`Błąd API (${response.status}): ${response.statusText}`);
-                throw new Error('Nie udało się pobrać danych z API.');
-            }
+                return matches;
 
-            const data = await response.json();
-
-            // Logowanie odpowiedzi z API, aby sprawdzić, co zwraca
-            console.log('API Response:', data);
-
-            if (!data.response || data.response.length === 0) {
-                console.warn('Brak danych o meczach dla wybranej daty.');
+            } catch (error) {
+                console.error('Błąd podczas pobierania danych z Sofascore:', error.message);
                 return [];
             }
-
-            return data.response;
         }
 
-        // Generowanie przewidywań (Przykładowa implementacja)
-        function generatePredictions(match) {
-            // Przykładowe przewidywania na podstawie formy drużyn
-            return [
-                {
-                    type: 'Zwycięzca',
-                    prediction: '1',
-                    confidence: 0.75,
-                    reason: 'Gospodarze w dobrej formie'
-                },
-                {
-                    type: 'Gole',
-                    prediction: 'Powyżej 2.5',
-                    confidence: 0.70,
-                    reason: 'Średnia liczba bramek drużyn'
-                }
-            ];
+        function generateH2HLinks(matches) {
+            return matches.map(match => ({
+                ...match,
+                h2hLink: `https://www.fctables.com/h2h/${match.homeTeam.toLowerCase()}/${match.awayTeam.toLowerCase()}/`
+            }));
         }
 
-        // Analiza meczów i wybór najlepszych typów
-        async function analyzeAllMatches(matches) {
-            return matches.map(match => {
-                const predictions = generatePredictions(match);
-                return { match, predictions };
-            });
-        }
-
-        // Wyświetlanie wyników
-        function displayResults(analyzedMatches) {
+        function displayResults(matches) {
             const container = document.getElementById('matchesContainer');
             container.innerHTML = '';
 
-            analyzedMatches.forEach(({ match, predictions }) => {
+            if (matches.length === 0) {
+                container.innerHTML = '<p class="error-message">⚠️ Brak dostępnych meczów na wybraną datę.</p>';
+                return;
+            }
+
+            matches.forEach(match => {
                 const card = document.createElement('div');
                 card.className = 'match-card';
-
-                const header = document.createElement('div');
-                header.className = 'match-header';
-                header.innerHTML = `
-                    <h3>${match.teams.home.name} vs ${match.teams.away.name}</h3>
-                    <div>🕒 ${new Date(match.fixture.date).toLocaleString()}</div>
+                card.innerHTML = `
+                    <h3>${match.homeTeam} vs ${match.awayTeam}</h3>
+                    <p><a href="${match.h2hLink}" target="_blank">Statystyki H2H</a></p>
                 `;
-
-                const predictionSection = document.createElement('div');
-                predictionSection.className = 'prediction-section';
-                predictionSection.innerHTML = '<h4>Top 7 typów na ten mecz:</h4>';
-
-                predictions.forEach((pred, index) => {
-                    const bet = document.createElement('div');
-                    bet.className = 'best-bet';
-                    const confidence = (pred.confidence * 100).toFixed(1);
-                    const stars = '⭐'.repeat(Math.round(pred.confidence * 5));
-                    bet.innerHTML = `
-                        <h4>#${index + 1} ${pred.type}</h4>
-                        <p>Typ: <strong>${pred.prediction}</strong></p>
-                        <p>Pewność: ${confidence}% ${stars}</p>
-                        <p>Uzasadnienie: ${pred.reason}</p>
-                    `;
-                    predictionSection.appendChild(bet);
-                });
-
-                card.appendChild(header);
-                card.appendChild(predictionSection);
                 container.appendChild(card);
             });
         }
 
-        // Uruchomienie analizy
         async function startAnalysis() {
-            const loadingIndicator = document.getElementById('loadingIndicator');
-            const matchesContainer = document.getElementById('matchesContainer');
-            const systemStatus = document.getElementById('systemStatus');
-            const selectedDate = document.getElementById('dateSelect').value;
-            const selectedLeague = document.getElementById('leagueSelect').value;
-
-            // Formatowanie daty do API
-            const formattedDate = formatDateToAPI(selectedDate);
-
+            const dateInput = document.getElementById('dateSelect').value || getCurrentDate();
+            
+            document.getElementById('loadingIndicator').style.display = 'block';
+            
             try {
-                loadingIndicator.style.display = 'block';
-                systemStatus.textContent = 'Pobieranie danych...';
-                matchesContainer.innerHTML = '';
+                const matches = await fetchMatches(dateInput);
+                const matchesWithLinks = generateH2HLinks(matches);
 
-                // Pobieranie meczów z API
-                const matches = await fetchMatches(formattedDate, selectedLeague);
+                displayResults(matchesWithLinks);
 
-                if (!matches || matches.length === 0) {
-                    systemStatus.textContent = 'Brak meczów do analizy.';
-                    matchesContainer.innerHTML = `
-                        <div class="error-message">
-                            <p>⚠️ Brak dostępnych meczów na wybraną datę.</p>
-                        </div>`;
-                    return;
-                }
-
-                systemStatus.textContent = 'Analiza meczów...';
-                const analyzedMatches = await analyzeAllMatches(matches);
-
-                if (!analyzedMatches || analyzedMatches.length === 0) {
-                    matchesContainer.innerHTML = `
-                        <div class="error-message">
-                            <p>⚠️ Nie udało się przeprowadzić analizy meczów.</p>
-                        </div>`;
-                    systemStatus.textContent = 'Analiza nie powiodła się.';
-                    return;
-                }
-
-                displayResults(analyzedMatches);
-                systemStatus.textContent = 'Analiza zakończona.';
+                document.getElementById('systemStatus').textContent = 'Analiza zakończona.';
+                
             } catch (error) {
-                console.error('Błąd podczas analizy:', error);
-                matchesContainer.innerHTML = `
-                    <div class="error-message">
-                        <p>⚠️ Wystąpił błąd podczas analizy meczów.</p>
-                        <p>${error.message}</p>
-                    </div>`;
-                systemStatus.textContent = 'Wystąpił błąd.';
+                console.error('Błąd podczas analizy:', error.message);
+                document.getElementById('systemStatus').textContent = 'Wystąpił błąd podczas analizy.';
+                
+                document.getElementById('matchesContainer').innerHTML =
+                    `<p class="error-message">⚠️ Wystąpił błąd podczas analizy meczów.</p>`;
+                
             } finally {
-                loadingIndicator.style.display = 'none';
+                document.getElementById('loadingIndicator').style.display = 'none';
             }
         }
 
-        // Dodanie event listenera do przycisku Analizuj
+        function getCurrentDate() {
+            const today = new Date();
+            return today.toISOString().split('T')[0];
+        }
+
         document.getElementById('analyzeButton').addEventListener('click', startAnalysis);
     </script>
 </body>
