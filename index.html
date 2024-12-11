@@ -1,169 +1,277 @@
-<!DOCTYPE html>
-<html lang="pl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Superprogram do Typowania Sportowego</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f4f4f9;
-        }
-        .container {
-            max-width: 1200px;
-            margin: auto;
-            background: #ffffff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        h1, h2 {
-            text-align: center;
-            color: #333;
-        }
-        input, button {
-            display: block;
-            width: 100%;
-            padding: 10px;
-            margin: 10px 0;
-            font-size: 16px;
-        }
-        button {
-            background: #28a745;
-            color: white;
-            border: none;
-            cursor: pointer;
-            border-radius: 5px;
-        }
-        button:hover {
-            background: #218838;
-        }
-        .result {
-            padding: 10px;
-            margin: 10px 0;
-            border: 1px solid #ccc;
-            background-color: #f8f9fa;
-        }
-        .summary {
-            margin-top: 20px;
-            padding: 15px;
-            background-color: #f0f8ff;
-            border-left: 4px solid #007bff;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Superprogram do Typowania Sportowego</h1>
-        <label for="date">Wybierz datę:</label>
-        <input type="date" id="date" onchange="fetchAndAnalyzeMatches()">
-        <div id="results"></div>
-        <div class="summary" id="summary"></div>
-    </div>
+import random
+from datetime import datetime, timedelta
+import pandas as pd
+import numpy as np
+import colorama
+from colorama import Fore, Back, Style
+from typing import List, Dict, Any, Tuple
+import emoji
 
-    <script>
-        const API_KEY = 'ac0417c6e0dcfa236b146b9585892c9a';
+class Meeting:
+    def __init__(self, title: str, date: datetime, duration: int, 
+                 participants: int, priority: int):
+        self.title = title
+        self.date = date
+        self.duration = duration
+        self.participants = participants
+        self.priority = priority
+        self.score = 0.0
 
-        async function fetchAndAnalyzeMatches() {
-            const dateInput = document.getElementById('date').value.trim();
-            const resultsDiv = document.getElementById('results');
-            const summaryDiv = document.getElementById('summary');
-
-            // Wyczyść poprzednie wyniki
-            resultsDiv.innerHTML = 'Ładowanie danych z API-Football...';
-            summaryDiv.innerHTML = '';
-
-            if (!dateInput) {
-                resultsDiv.innerHTML = '<p>Proszę wybrać datę.</p>';
-                return;
-            }
-
-            try {
-                // Endpoint API-Football
-                const url = `https://v3.football.api-sports.io/fixtures?date=${dateInput}`;
-                const response = await fetch(url, {
-                    method: 'GET',
-                    headers: {
-                        'x-rapidapi-key': API_KEY,
-                        'x-rapidapi-host': 'v3.football.api-sports.io'
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                const data = await response.json();
-
-                // Sprawdź, czy są dostępne mecze
-                if (data.response && data.response.length > 0) {
-                    let matchesHTML = '';
-                    let analyzedMatches = [];
-
-                    data.response.forEach(match => {
-                        const homeTeam = match.teams.home.name || "Nieznany";
-                        const awayTeam = match.teams.away.name || "Nieznany";
-                        const matchTime = new Date(match.fixture.date).toLocaleString();
-                        const status = match.fixture.status.short;
-
-                        matchesHTML += `
-                            <div class="result">
-                                <strong>${homeTeam} vs ${awayTeam}</strong><br>
-                                Czas rozpoczęcia: ${matchTime}<br>
-                                Status meczu: ${status}<br>
-                            </div>
-                        `;
-
-                        // Dodaj mecz do analizy
-                        analyzedMatches.push({
-                            homeTeam,
-                            awayTeam,
-                            status,
-                            utcDate: match.fixture.date
-                        });
-                    });
-
-                    resultsDiv.innerHTML = matchesHTML;
-
-                    // Analiza najlepszych typów
-                    analyzeMatches(analyzedMatches);
-                } else {
-                    resultsDiv.innerHTML = '<p>Brak meczów dla wybranej daty.</p>';
-                }
-                
-            } catch (error) {
-                resultsDiv.innerHTML = `Błąd podczas ładowania danych z API-Football: ${error.message}`;
-                console.error(error); // Wyświetl szczegóły błędu w konsoli
+class MeetingAnalyzer:
+    def __init__(self):
+        colorama.init()
+        self.meetings_database: List[Dict[str, Any]] = []
+        self.meeting_patterns = {
+            "Daily Standup": {
+                "frequency": "daily",
+                "typical_time": "morning",
+                "duration": 15,
+                "participants": (4, 12),
+                "priority": 8,
+                "emoji": "⭐"
+            },
+            "Sprint Planning": {
+                "frequency": "bi-weekly",
+                "typical_time": "morning",
+                "duration": 120,
+                "participants": (5, 15),
+                "priority": 9,
+                "emoji": "📅"
+            },
+            "Client Meeting": {
+                "frequency": "weekly",
+                "typical_time": "afternoon",
+                "duration": 60,
+                "participants": (2, 6),
+                "priority": 10,
+                "emoji": "🤝"
+            },
+            "Team Building": {
+                "frequency": "monthly",
+                "typical_time": "afternoon",
+                "duration": 180,
+                "participants": (8, 30),
+                "priority": 6,
+                "emoji": "🎮"
+            },
+            "Code Review": {
+                "frequency": "weekly",
+                "typical_time": "afternoon",
+                "duration": 45,
+                "participants": (2, 5),
+                "priority": 7,
+                "emoji": "💻"
+            },
+            "Architecture Discussion": {
+                "frequency": "monthly",
+                "typical_time": "morning",
+                "duration": 90,
+                "participants": (4, 8),
+                "priority": 8,
+                "emoji": "🏗️"
+            },
+            "Product Demo": {
+                "frequency": "bi-weekly",
+                "typical_time": "afternoon",
+                "duration": 60,
+                "participants": (5, 20),
+                "priority": 9,
+                "emoji": "🎥"
+            },
+            "Training Session": {
+                "frequency": "monthly",
+                "typical_time": "morning",
+                "duration": 120,
+                "participants": (10, 40),
+                "priority": 7,
+                "emoji": "📚"
+            },
+            "Strategy Meeting": {
+                "frequency": "quarterly",
+                "typical_time": "morning",
+                "duration": 180,
+                "participants": (5, 12),
+                "priority": 10,
+                "emoji": "🎯"
+            },
+            "Innovation Workshop": {
+                "frequency": "monthly",
+                "typical_time": "afternoon",
+                "duration": 150,
+                "participants": (8, 20),
+                "priority": 8,
+                "emoji": "💡"
             }
         }
 
-        function analyzeMatches(matches) {
-            const summaryDiv = document.getElementById('summary');
+    def generate_meetings(self, start_date: datetime, 
+                         days_ahead: int) -> List[Meeting]:
+        meetings = []
+        current_date = start_date
+        end_date = start_date + timedelta(days=days_ahead)
+
+        while current_date <= end_date:
+            for meeting_type, pattern in self.meeting_patterns.items():
+                if self._should_schedule_meeting(pattern["frequency"], current_date):
+                    meeting_time = self._get_meeting_time(pattern["typical_time"])
+                    meeting_date = datetime.combine(current_date.date(), meeting_time)
+                    
+                    participants = random.randint(*pattern["participants"])
+                    
+                    meeting = Meeting(
+                        title=f"{pattern['emoji']} {meeting_type}",
+                        date=meeting_date,
+                        duration=pattern["duration"],
+                        participants=participants,
+                        priority=pattern["priority"]
+                    )
+                    meetings.append(meeting)
             
-            if (matches.length === 0) {
-                summaryDiv.innerHTML = '<p>Brak meczów do analizy.</p>';
-                return;
-            }
+            current_date += timedelta(days=1)
+        
+        return sorted(meetings, key=lambda x: x.date)
 
-            summaryDiv.innerHTML = '<h3>Najlepsze Typy:</h3>';
+    def analyze_meetings(self, meetings: List[Meeting]) -> List[Tuple[str, float]]:
+        meeting_scores = {}
+        
+        for meeting in meetings:
+            score = self._calculate_meeting_score(meeting)
+            meeting_type = meeting.title.split(" ", 1)[1]  # Remove emoji
+            
+            if meeting_type not in meeting_scores:
+                meeting_scores[meeting_type] = []
+            meeting_scores[meeting_type].append(score)
 
-            // Przykładowa analiza - wybór pierwszych kilku meczów
-            const topMatches = matches.slice(0, Math.min(matches.length, 5)); // Maksymalnie 5 najlepszych meczów
-
-            topMatches.forEach(match => {
-                const prediction = `Typ na ${match.homeTeam} - wygra z kursem 1.90`; // Symulowana analiza
-
-                summaryDiv.innerHTML += `
-                    <div class="result">
-                        <strong>${match.homeTeam} vs ${match.awayTeam}</strong><br>
-                        Prognoza: ${prediction}<br>
-                        Status meczu: ${match.status}<br>
-                    </div>
-                `;
-            });
+        # Calculate average scores
+        avg_scores = {
+            m_type: np.mean(scores) 
+            for m_type, scores in meeting_scores.items()
         }
-    </script>
-</body>
-</html>
+
+        # Sort by score and get top 7
+        return sorted(avg_scores.items(), 
+                     key=lambda x: x[1], 
+                     reverse=True)[:7]
+
+    def _calculate_meeting_score(self, meeting: Meeting) -> float:
+        # Base score from priority
+        score = meeting.priority * 10
+
+        # Adjust for duration
+        if meeting.duration <= 30:
+            score *= 1.2
+        elif meeting.duration >= 180:
+            score *= 0.8
+
+        # Adjust for participants
+        if 5 <= meeting.participants <= 15:
+            score *= 1.1
+        elif meeting.participants > 25:
+            score *= 0.9
+
+        # Time of day factor
+        hour = meeting.date.hour
+        if 9 <= hour <= 11 or 14 <= hour <= 16:
+            score *= 1.1
+        elif hour < 8 or hour > 17:
+            score *= 0.8
+
+        return score
+
+    def _should_schedule_meeting(self, frequency: str, date: datetime) -> bool:
+        if frequency == "daily":
+            return True
+        elif frequency == "weekly":
+            return date.weekday() == 0
+        elif frequency == "bi-weekly":
+            return date.weekday() == 0 and date.isocalendar()[1] % 2 == 0
+        elif frequency == "monthly":
+            return date.day == 1
+        elif frequency == "quarterly":
+            return date.day == 1 and date.month in [1, 4, 7, 10]
+        return False
+
+    def _get_meeting_time(self, typical_time: str) -> datetime.time:
+        if typical_time == "morning":
+            hour = random.randint(9, 11)
+        else:  # afternoon
+            hour = random.randint(14, 16)
+        minute = random.choice([0, 15, 30, 45])
+        return datetime.time(hour, minute)
+
+class ModernInterface:
+    def __init__(self):
+        self.colors = {
+            "header": Fore.CYAN,
+            "normal": Fore.WHITE,
+            "highlight": Fore.YELLOW,
+            "success": Fore.GREEN,
+            "warning": Fore.RED,
+            "reset": Style.RESET_ALL
+        }
+
+    def display_meetings(self, meetings: List[Meeting]):
+        print(f"\n{self.colors['header']}📅 Upcoming Meetings Schedule"
+              f"{self.colors['reset']}")
+        print("=" * 60)
+
+        current_date = None
+        for meeting in meetings:
+            meeting_date = meeting.date.date()
+            
+            if current_date != meeting_date:
+                current_date = meeting_date
+                print(f"\n{self.colors['highlight']}"
+                      f"{meeting_date.strftime('%A, %B %d, %Y')}"
+                      f"{self.colors['reset']}")
+                print("-" * 40)
+
+            print(f"{self.colors['normal']}"
+                  f"{meeting.date.strftime('%H:%M')} - "
+                  f"{meeting.title}")
+            print(f"   Duration: {meeting.duration} min | "
+                  f"Participants: {meeting.participants}"
+                  f"{self.colors['reset']}")
+
+    def display_analysis(self, analysis_results: List[Tuple[str, float]]):
+        print(f"\n{self.colors['header']}📊 Meeting Type Analysis"
+              f"{self.colors['reset']}")
+        print("=" * 60)
+
+        for i, (meeting_type, score) in enumerate(analysis_results, 1):
+            score_color = self._get_score_color(score)
+            print(f"{score_color}{i}. {meeting_type}")
+            print(f"   Score: {score:.2f}/100{self.colors['reset']}")
+            print(f"   {self._get_score_feedback(score)}")
+
+    def _get_score_color(self, score: float) -> str:
+        if score >= 80:
+            return self.colors["success"]
+        elif score >= 60:
+            return self.colors["highlight"]
+        return self.colors["warning"]
+
+    def _get_score_feedback(self, score: float) -> str:
+        if score >= 80:
+            return "🌟 Highly Effective"
+        elif score >= 60:
+            return "✅ Meeting Expectations"
+        return "⚠️ Needs Optimization"
+
+def main():
+    analyzer = MeetingAnalyzer()
+    interface = ModernInterface()
+
+    # Generate meetings for the next 14 days
+    start_date = datetime.now()
+    meetings = analyzer.generate_meetings(start_date, 14)
+    
+    # Display meetings schedule
+    interface.display_meetings(meetings)
+    
+    # Analyze and display results
+    analysis_results = analyzer.analyze_meetings(meetings)
+    interface.display_analysis(analysis_results)
+
+if __name__ == "__main__":
+    main()
