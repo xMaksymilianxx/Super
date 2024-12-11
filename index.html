@@ -18,9 +18,10 @@
         body {
             font-family: 'Segoe UI', Arial, sans-serif;
             margin: 0;
-            padding: 0;
+            padding: 20px;
             background-color: var(--dark-bg);
             color: var(--text-color);
+            line-height: 1.6;
         }
 
         .container {
@@ -38,112 +39,327 @@
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
 
-        .match-card {
-            background: var(--card-bg);
-            margin: 10px 0;
-            padding: 15px;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        .header h1 {
+            margin: 0;
+            color: var(--primary-color);
+            font-size: 2.5em;
         }
 
-        .prediction-section {
-            margin-top: 15px;
-            padding: 15px;
-            background: rgba(33, 150, 243, 0.1);
-            border-radius: 5px;
+        .control-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .control-card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .match-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .match-card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .match-card:hover {
+            transform: translateY(-5px);
         }
 
         .btn {
-            display: inline-block;
-            padding: 10px 15px;
-            background: #007BFF;
-            color: #fff;
-            text-decoration: none;
+            padding: 10px 20px;
+            border: none;
             border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s ease;
+            background-color: var(--primary-color);
+            color: white;
+            width: 100%;
             margin-top: 10px;
+        }
+
+        .btn:hover {
+            background-color: #1976D2;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: var(--warning-color);
+        }
+
+        .error-message {
+            background: rgba(244, 67, 54, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        select, input {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 5px;
+            background: rgba(255,255,255,0.1);
+            color: var(--text-color);
+        }
+
+        .debug-info {
+            background: rgba(33, 150, 243, 0.1);
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-family: monospace;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            .header h1 {
+                font-size: 2em;
+            }
+            .match-grid {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <header class="header">
-            <h1>🎯 System Analizy Meczów</h1>
+            <h1>🎯 System Analizy Meczów i Value Betów</h1>
         </header>
 
         <div class="control-panel">
             <div class="control-card">
                 <h2>📅 Wybór daty</h2>
-                <input type="date" id="dateSelect">
-                <button onclick="analyzeMatches()" class="btn">Analizuj</button>
+                <input type="date" id="dateSelect" class="date-input">
+                <button onclick="startAnalysis()" class="btn">Analizuj</button>
+            </div>
+            
+            <div class="control-card">
+                <h2>⚙️ Status systemu</h2>
+                <div id="systemStatus" class="status-container">
+                    Gotowy do analizy
+                </div>
             </div>
         </div>
 
-        <div id="matchesContainer"></div>
+        <div id="loadingIndicator" class="loading" style="display: none;">
+            ⌛ Trwa analiza meczów...
+        </div>
+
+        <div id="debugInfo" class="debug-info" style="display: none;">
+            <!-- Informacje debugowania będą tutaj -->
+        </div>
+
+        <div id="matchesContainer" class="match-grid">
+            <!-- Tutaj będą wyświetlane analizowane mecze -->
+        </div>
     </div>
 
     <script>
-        const API_KEY = 'your_api_football_key';
-        const API_URL = 'https://v3.football.api-sports.io';
+        const API_FOOTBALL_KEY = 'YOUR_API_FOOTBALL_KEY';
+        const API_FOOTBALL_URL = 'https://v3.football.api-sports.io';
+        
+        // Debug mode
+        const DEBUG = true;
 
-        async function analyzeMatches() {
-            const date = document.getElementById('dateSelect').value;
-            const container = document.getElementById('matchesContainer');
-            
-            try {
-                const matchData = await fetchMatchData(date);
-                const analysis = await analyzeMatchData(matchData);
-                displayResults(analysis);
-            } catch (error) {
-                container.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+        function debugLog(message, data = null) {
+            if (DEBUG) {
+                console.log(message, data);
+                const debugInfo = document.getElementById('debugInfo');
+                debugInfo.style.display = 'block';
+                debugInfo.innerHTML += `<div>${message}</div>`;
+                if (data) {
+                    debugInfo.innerHTML += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+                }
             }
         }
 
-        async function fetchMatchData(date) {
-            const response = await fetch(`${API_URL}/fixtures/date/${date}`, {
+        async function startAnalysis() {
+            debugLog('Rozpoczęcie analizy');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const matchesContainer = document.getElementById('matchesContainer');
+            const systemStatus = document.getElementById('systemStatus');
+            const selectedDate = document.getElementById('dateSelect').value;
+
+            try {
+                loadingIndicator.style.display = 'block';
+                systemStatus.textContent = 'Pobieranie danych...';
+                matchesContainer.innerHTML = '';
+
+                debugLog('Wybrana data:', selectedDate);
+
+                // Pobieranie meczów z API Football
+                const matches = await fetchMatches(selectedDate);
+                debugLog('Pobrane mecze:', matches);
+
+                if (!matches || matches.length === 0) {
+                    throw new Error('Brak meczów na wybrany dzień');
+                }
+
+                systemStatus.textContent = 'Analizowanie meczów...';
+                const analyzedMatches = await analyzeMatches(matches);
+                debugLog('Przeanalizowane mecze:', analyzedMatches);
+
+                displayResults(analyzedMatches);
+                systemStatus.textContent = 'Analiza zakończona';
+
+            } catch (error) {
+                console.error('Error:', error);
+                debugLog('Błąd:', error.message);
+                matchesContainer.innerHTML = `
+                    <div class="error-message">
+                        <p>⚠️ Wystąpił błąd podczas analizy</p>
+                        <p>Szczegóły: ${error.message}</p>
+                    </div>`;
+                systemStatus.textContent = 'Wystąpił błąd';
+            } finally {
+                loadingIndicator.style.display = 'none';
+            }
+        }
+
+        async function fetchMatches(date) {
+            debugLog('Pobieranie meczów z API');
+            try {
+                const response = await fetch(`${API_FOOTBALL_URL}/fixtures/date/${date}`, {
+                    headers: {
+                        'x-rapidapi-host': 'v3.football.api-sports.io',
+                        'x-rapidapi-key': API_FOOTBALL_KEY
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                return data.response;
+            } catch (error) {
+                debugLog('Błąd podczas pobierania meczów:', error);
+                throw new Error('Nie udało się pobrać danych o meczach');
+            }
+        }
+
+        async function analyzeMatches(matches) {
+            debugLog('Rozpoczęcie analizy meczów');
+            return Promise.all(matches.map(async match => {
+                try {
+                    const statistics = await fetchStatistics(match.fixture.id);
+                    const h2h = await fetchH2H(match.teams.home.id, match.teams.away.id);
+                    
+                    return {
+                        match: match,
+                        analysis: analyzeMatchData(match, statistics, h2h),
+                        confidence: calculateConfidence(statistics, h2h)
+                    };
+                } catch (error) {
+                    debugLog(`Błąd analizy meczu ${match.fixture.id}:`, error);
+                    return {
+                        match: match,
+                        analysis: null,
+                        confidence: 0,
+                        error: error.message
+                    };
+                }
+            }));
+        }
+
+        async function fetchStatistics(fixtureId) {
+            debugLog(`Pobieranie statystyk dla meczu ${fixtureId}`);
+            const response = await fetch(`${API_FOOTBALL_URL}/fixtures/statistics?fixture=${fixtureId}`, {
                 headers: {
-                    'x-rapidapi-key': API_KEY,
-                    'x-rapidapi-host': 'v3.football.api-sports.io'
+                    'x-rapidapi-host': 'v3.football.api-sports.io',
+                    'x-rapidapi-key': API_FOOTBALL_KEY
                 }
             });
             return await response.json();
         }
 
-        async function analyzeMatchData(matchData) {
-            // Implementacja analizy z wykorzystaniem różnych endpointów API-Football
-            const analyses = [];
-            
-            for (const match of matchData.response) {
-                const stats = await fetchTeamStats(match.teams.home.id, match.teams.away.id);
-                const h2h = await fetchHeadToHead(match.teams.home.id, match.teams.away.id);
-                const predictions = calculatePredictions(stats, h2h);
-                
-                analyses.push({
-                    match: match,
-                    stats: stats,
-                    predictions: predictions
-                });
-            }
-            
-            return analyses;
+        async function fetchH2H(team1Id, team2Id) {
+            debugLog(`Pobieranie H2H dla drużyn ${team1Id} vs ${team2Id}`);
+            const response = await fetch(`${API_FOOTBALL_URL}/fixtures/headtohead?h2h=${team1Id}-${team2Id}`, {
+                headers: {
+                    'x-rapidapi-host': 'v3.football.api-sports.io',
+                    'x-rapidapi-key': API_FOOTBALL_KEY
+                }
+            });
+            return await response.json();
         }
 
-        function displayResults(analyses) {
+        function analyzeMatchData(match, statistics, h2h) {
+            // Implementacja analizy danych
+            return {
+                predictedWinner: calculatePredictedWinner(match, statistics, h2h),
+                predictedGoals: calculatePredictedGoals(statistics),
+                predictedCards: calculatePredictedCards(statistics),
+                valueOpportunities: findValueOpportunities(match, statistics)
+            };
+        }
+
+        function calculateConfidence(statistics, h2h) {
+            // Implementacja obliczania pewności
+            return Math.random() * 0.5 + 0.5; // Przykładowa implementacja
+        }
+
+        function displayResults(analyzedMatches) {
             const container = document.getElementById('matchesContainer');
-            container.innerHTML = analyses.map(analysis => `
-                <div class="match-card">
-                    <h3>${analysis.match.teams.home.name} vs ${analysis.match.teams.away.name}</h3>
-                    <div class="prediction-section">
-                        <h4>Przewidywania:</h4>
-                        <p>Wynik: ${analysis.predictions.result}</p>
-                        <p>Bramki: ${analysis.predictions.goals}</p>
-                        <p>Pewność: ${analysis.predictions.confidence}%</p>
-                    </div>
-                </div>
-            `).join('');
+            
+            // Sortowanie po pewności
+            analyzedMatches
+                .sort((a, b) => b.confidence - a.confidence)
+                .forEach(({match, analysis, confidence}) => {
+                    const card = document.createElement('div');
+                    card.className = 'match-card';
+                    
+                    if (analysis) {
+                        card.innerHTML = `
+                            <div class="match-header">
+                                <h3>${match.teams.home.name} vs ${match.teams.away.name}</h3>
+                                <div>Pewność: ${(confidence * 100).toFixed(1)}%</div>
+                            </div>
+                            <div class="prediction-section">
+                                <h4>Przewidywania:</h4>
+                                <p>Zwycięzca: ${analysis.predictedWinner}</p>
+                                <p>Bramki: ${analysis.predictedGoals}</p>
+                                <p>Kartki: ${analysis.predictedCards}</p>
+                            </div>
+                        `;
+                    } else {
+                        card.innerHTML = `
+                            <div class="match-header">
+                                <h3>${match.teams.home.name} vs ${match.teams.away.name}</h3>
+                                <div class="error-message">Błąd analizy</div>
+                            </div>
+                        `;
+                    }
+                    
+                    container.appendChild(card);
+                });
         }
 
-        // Inicjalizacja
-        document.getElementById('dateSelect').valueAsDate = new Date();
+        // Inicjalizacja przy załadowaniu strony
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('dateSelect').valueAsDate = new Date();
+            debugLog('System zainicjalizowany');
+        });
     </script>
 </body>
 </html>
