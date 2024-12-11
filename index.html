@@ -122,7 +122,7 @@
         <div class="control-panel">
             <div class="control-card">
                 <h2>📅 Wybór daty</h2>
-                <input type="date" id="dateSelect" class="date-input">
+                <input type="text" id="dateSelect" class="date-input" placeholder="DD-MM-YYYY">
                 <select id="leagueSelect" class="league-select">
                     <option value="all">Wszystkie ligi</option>
                     <option value="39">Premier League</option>
@@ -168,98 +168,11 @@
         const API_KEY = 'ac0417c6e0dcfa236b146b9585892c9a';
         const API_URL = 'https://v3.football.api-sports.io';
 
-        // Zaawansowany system pamięci
-        class MemorySystem {
-            constructor() {
-                this.memory = this.loadMemory();
-                this.initializeMemoryStructure();
-            }
-
-            loadMemory() {
-                const savedMemory = localStorage.getItem('analysisMemory');
-                return savedMemory ? JSON.parse(savedMemory) : {
-                    predictions: {},
-                    accuracy: {},
-                    historicalData: {},
-                    lastUpdate: null,
-                    learningProgress: {},
-                    similarityMatrix: {}
-                };
-            }
-
-            initializeMemoryStructure() {
-                if (!this.memory.learningProgress) {
-                    this.memory.learningProgress = {};
-                }
-                if (!this.memory.similarityMatrix) {
-                    this.memory.similarityMatrix = {};
-                }
-                this.cleanOldData();
-            }
-
-            cleanOldData() {
-                const thirtyDaysAgo = new Date();
-                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-                Object.keys(this.memory.predictions).forEach(key => {
-                    const predDate = new Date(this.memory.predictions[key].timestamp);
-                    if (predDate < thirtyDaysAgo) {
-                        delete this.memory.predictions[key];
-                    }
-                });
-            }
-
-            saveMemory() {
-                this.memory.lastUpdate = new Date().toISOString();
-                localStorage.setItem('analysisMemory', JSON.stringify(this.memory));
-            }
-
-            storePrediction(match, predictions, confidence) {
-                const key = `${match.fixture.id}`;
-                this.memory.predictions[key] = {
-                    match: {
-                        id: match.fixture.id,
-                        teams: match.teams,
-                        league: match.league,
-                        date: match.fixture.date
-                    },
-                    predictions: predictions,
-                    confidence: confidence,
-                    timestamp: new Date().toISOString()
-                };
-                this.updateLearningProgress(match, predictions);
-                this.saveMemory();
-            }
-
-            updateLearningProgress(match, predictions) {
-                const leagueId = match.league.id;
-                if (!this.memory.learningProgress[leagueId]) {
-                    this.memory.learningProgress[leagueId] = {
-                        totalPredictions: 0,
-                        successfulPredictions: 0,
-                        lastUpdate: new Date().toISOString()
-                    };
-                }
-                this.memory.learningProgress[leagueId].totalPredictions++;
-            }
-
-            getAccuracyStats() {
-                const stats = {
-                    total: 0,
-                    correct: 0
-                };
-
-                Object.values(this.memory.accuracy).forEach(acc => {
-                    stats.total += acc.total;
-                    stats.correct += acc.correct;
-                });
-
-                return stats;
-            }
+        // Funkcja do przekształcenia daty z formatu DD-MM-YYYY na YYYY-MM-DD
+        function formatDateToAPI(date) {
+            const [day, month, year] = date.split('-');
+            return `${year}-${month}-${day}`;
         }
-
-        // Inicjalizacja systemu pamięci
-        const memorySystem = new MemorySystem();
 
         async function startAnalysis() {
             const loadingIndicator = document.getElementById('loadingIndicator');
@@ -269,12 +182,15 @@
             const selectedLeague = document.getElementById('leagueSelect').value;
             const analysisDepth = document.getElementById('analysisDepth').value;
 
+            // Sprawdzanie formatu daty
+            const formattedDate = formatDateToAPI(selectedDate);
+
             try {
                 loadingIndicator.style.display = 'block';
                 systemStatus.textContent = 'Pobieranie danych...';
                 matchesContainer.innerHTML = '';
 
-                const matches = await fetchMatches(selectedDate, selectedLeague);
+                const matches = await fetchMatches(formattedDate, selectedLeague);
 
                 if (!matches || matches.length === 0) {
                     systemStatus.textContent = 'Brak meczów do analizy.';
@@ -313,12 +229,9 @@
         }
 
         async function fetchMatches(date, league) {
-            const formattedDate = new Date(date).toISOString().split('T')[0];
-            const currentSeason = new Date().getFullYear();
-
-            let url = new URL(`${API_URL}/fixtures`);
-            url.searchParams.append('date', formattedDate);
-            url.searchParams.append('season', currentSeason);
+            const url = new URL(`${API_URL}/fixtures`);
+            url.searchParams.append('date', date);
+            url.searchParams.append('season', '2024');
             url.searchParams.append('timezone', 'Europe/Warsaw');
 
             if (league !== 'all') {
@@ -348,25 +261,47 @@
             return data.response;
         }
 
-        function updateAccuracyDisplay() {
-            const stats = memorySystem.getAccuracyStats();
-            const accuracyStats = document.getElementById('analysisStats');
+        function displayResults(analyzedMatches) {
+            const container = document.getElementById('matchesContainer');
+            container.innerHTML = ''; // Wyczyszczenie wyników przed dodaniem nowych
 
-            if (stats.total > 0) {
-                const overallAccuracy = ((stats.correct / stats.total) * 100).toFixed(1);
-                accuracyStats.innerHTML = `
-                    <div class="accuracy-info">
-                        <p>Ogólna skuteczność: ${overallAccuracy}%</p>
-                        <p>Liczba analiz: ${stats.total}</p>
-                    </div>
+            analyzedMatches.forEach(({ match, predictions }) => {
+                const card = document.createElement('div');
+                card.className = 'match-card';
+
+                const header = document.createElement('div');
+                header.className = 'match-header';
+                header.innerHTML = `
+                    <h3>${match.teams.home.name} vs ${match.teams.away.name}</h3>
+                    <div>🕒 ${new Date(match.fixture.date).toLocaleString()}</div>
                 `;
-            } else {
-                accuracyStats.innerHTML = '<p>Brak danych historycznych</p>';
-            }
-        }
 
-        function calculateOverallConfidence(predictions) {
-            return predictions.reduce((sum, pred) => sum + pred.confidence, 0) / predictions.length;
+                const predictionSection = document.createElement('div');
+                predictionSection.className = 'prediction-section';
+                predictionSection.innerHTML = '<h4>Top 7 typów na ten mecz:</h4>';
+
+                predictions.forEach((pred, index) => {
+                    const bet = document.createElement('div');
+                    bet.className = 'best-bet';
+                    const confidence = (pred.confidence * 100).toFixed(1);
+                    const stars = '⭐'.repeat(Math.round(pred.confidence * 5));
+                    bet.innerHTML = `
+                        <h4>#${index + 1} ${pred.type}</h4>
+                        <p>Typ: <strong>${pred.prediction}</strong></p>
+                        <p>Pewność: ${confidence}% ${stars}</p>
+                        <p>Uzasadnienie: ${pred.reason}</p>
+                        <div class="confidence-meter">
+                            <div class="confidence-value" style="width: ${confidence}%"></div>
+                        </div>
+                        ${pred.improvedByMemory ? '<p class="memory-improved">✨ Ulepszone przez system uczenia</p>' : ''}
+                    `;
+                    predictionSection.appendChild(bet);
+                });
+
+                card.appendChild(header);
+                card.appendChild(predictionSection);
+                container.appendChild(card);
+            });
         }
     </script>
 </body>
