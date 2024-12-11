@@ -134,6 +134,20 @@
             transition: width 0.6s ease;
         }
 
+        .memory-stats {
+            padding: 10px;
+            margin-top: 10px;
+            background: rgba(33, 150, 243, 0.05);
+            border-radius: 5px;
+        }
+
+        .accuracy-chart {
+            height: 100px;
+            margin-top: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 5px;
+        }
+
         .btn {
             padding: 12px 20px;
             border: none;
@@ -168,6 +182,7 @@
             border-radius: 10px;
             margin: 20px 0;
             text-align: center;
+            border: 1px solid var(--danger-color);
         }
 
         select, input {
@@ -178,12 +193,22 @@
             border-radius: 5px;
             background: rgba(255,255,255,0.1);
             color: var(--text-color);
+            transition: all 0.3s ease;
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2);
         }
 
         .date-warning {
             color: var(--warning-color);
             font-size: 0.9em;
             margin-top: 5px;
+            padding: 5px;
+            background: rgba(255, 152, 0, 0.1);
+            border-radius: 3px;
         }
 
         @media (max-width: 768px) {
@@ -227,6 +252,10 @@
                 <div id="systemStatus" class="status-container">
                     Gotowy do analizy
                 </div>
+                <div id="memoryStats" class="memory-stats">
+                    <h3>Statystyki uczenia</h3>
+                    <div id="accuracyChart" class="accuracy-chart"></div>
+                </div>
             </div>
 
             <div class="control-card">
@@ -236,6 +265,7 @@
                     <option value="advanced" selected>Zaawansowana</option>
                     <option value="full">Pełna</option>
                 </select>
+                <div id="analysisStats" class="analysis-stats"></div>
             </div>
         </div>
 
@@ -251,50 +281,163 @@
     const API_KEY = 'ac0417c6e0dcfa236b146b9585892c9a';
     const API_URL = 'https://v3.football.api-sports.io';
 
-    // System pamięci i uczenia
-    function loadMemory() {
-        const memory = localStorage.getItem('analysisMemory');
-        return memory ? JSON.parse(memory) : {
-            predictions: {},
-            accuracy: {},
-            lastUpdate: null,
-            historicalData: {}
-        };
-    }
+    // Zaawansowany system pamięci
+    class MemorySystem {
+        constructor() {
+            this.memory = this.loadMemory();
+            this.initializeMemoryStructure();
+        }
 
-    function saveMemory(data) {
-        localStorage.setItem('analysisMemory', JSON.stringify({
-            ...data,
-            lastUpdate: new Date().toISOString()
-        }));
-    }
-
-    function updatePredictionAccuracy(prediction, wasCorrect) {
-        const memory = loadMemory();
-        const predictionType = prediction.type;
-        
-        if (!memory.accuracy[predictionType]) {
-            memory.accuracy[predictionType] = {
-                correct: 0,
-                total: 0,
-                history: []
+        loadMemory() {
+            const savedMemory = localStorage.getItem('analysisMemory');
+            return savedMemory ? JSON.parse(savedMemory) : {
+                predictions: {},
+                accuracy: {},
+                historicalData: {},
+                lastUpdate: null,
+                learningProgress: {},
+                similarityMatrix: {}
             };
         }
-        
-        memory.accuracy[predictionType].total++;
-        if (wasCorrect) {
-            memory.accuracy[predictionType].correct++;
+
+        initializeMemoryStructure() {
+            if (!this.memory.learningProgress) {
+                this.memory.learningProgress = {};
+            }
+            if (!this.memory.similarityMatrix) {
+                this.memory.similarityMatrix = {};
+            }
+            this.cleanOldData();
         }
 
-        // Zapisywanie historii predykcji
-        memory.accuracy[predictionType].history.push({
-            date: new Date().toISOString(),
-            prediction: prediction,
-            wasCorrect: wasCorrect
-        });
-        
-        saveMemory(memory);
+        cleanOldData() {
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+            Object.keys(this.memory.predictions).forEach(key => {
+                const predDate = new Date(this.memory.predictions[key].timestamp);
+                if (predDate < thirtyDaysAgo) {
+                    delete this.memory.predictions[key];
+                }
+            });
+        }
+
+        saveMemory() {
+            this.memory.lastUpdate = new Date().toISOString();
+            localStorage.setItem('analysisMemory', JSON.stringify(this.memory));
+        }
+
+        storePrediction(match, predictions, confidence) {
+            const key = `${match.fixture.id}`;
+            this.memory.predictions[key] = {
+                match: {
+                    id: match.fixture.id,
+                    teams: match.teams,
+                    league: match.league,
+                    date: match.fixture.date
+                },
+                predictions: predictions,
+                confidence: confidence,
+                timestamp: new Date().toISOString()
+            };
+            this.updateLearningProgress(match, predictions);
+            this.saveMemory();
+        }
+
+        updateLearningProgress(match, predictions) {
+            const leagueId = match.league.id;
+            if (!this.memory.learningProgress[leagueId]) {
+                this.memory.learningProgress[leagueId] = {
+                    totalPredictions: 0,
+                    successfulPredictions: 0,
+                    lastUpdate: new Date().toISOString()
+                };
+            }
+            this.memory.learningProgress[leagueId].totalPredictions++;
+        }
+
+        findSimilarMatches(match, limit = 5) {
+            const similarMatches = [];
+            const currentLeagueId = match.league.id;
+            
+            Object.values(this.memory.predictions)
+                .filter(pred => pred.match.league.id === currentLeagueId)
+                .forEach(pred => {
+                    const similarity = this.calculateMatchSimilarity(match, pred.match);
+                    if (similarity > 0.7) {
+                        similarMatches.push({
+                            prediction: pred,
+                            similarity: similarity
+                        });
+                    }
+                });
+
+            return similarMatches
+                .sort((a, b) => b.similarity - a.similarity)
+                .slice(0, limit);
+        }
+
+        calculateMatchSimilarity(match1, match2) {
+            const key = `${match1.fixture.id}-${match2.id}`;
+            if (this.memory.similarityMatrix[key]) {
+                return this.memory.similarityMatrix[key];
+            }
+
+            // Podstawowe kryteria podobieństwa
+            let similarity = 0;
+            
+            // Ta sama liga
+            if (match1.league.id === match2.league.id) similarity += 0.3;
+            
+            // Te same drużyny
+            if (match1.teams.home.id === match2.teams.home.id) similarity += 0.35;
+            if (match1.teams.away.id === match2.teams.away.id) similarity += 0.35;
+
+            this.memory.similarityMatrix[key] = similarity;
+            return similarity;
+        }
+
+        getAccuracyStats() {
+            const stats = {
+                total: 0,
+                correct: 0,
+                byType: {}
+            };
+
+            Object.values(this.memory.accuracy).forEach(acc => {
+                stats.total += acc.total;
+                stats.correct += acc.correct;
+                
+                if (!stats.byType[acc.type]) {
+                    stats.byType[acc.type] = {
+                        total: 0,
+                        correct: 0
+                    };
+                }
+                stats.byType[acc.type].total += acc.total;
+                stats.byType[acc.type].correct += acc.correct;
+            });
+
+            return stats;
+        }
+
+        improvePredictionConfidence(prediction, match) {
+            const similarMatches = this.findSimilarMatches(match);
+            if (similarMatches.length === 0) return prediction;
+
+            const avgSimilarityConfidence = similarMatches.reduce((acc, sim) => 
+                acc + (sim.prediction.confidence * sim.similarity), 0) / similarMatches.length;
+
+            return {
+                ...prediction,
+                confidence: (prediction.confidence + avgSimilarityConfidence) / 2,
+                improvedByMemory: true
+            };
+        }
     }
+
+    // Inicjalizacja systemu pamięci
+    const memorySystem = new MemorySystem();
 
     async function startAnalysis() {
         const loadingIndicator = document.getElementById('loadingIndicator');
@@ -317,8 +460,8 @@
 
             systemStatus.textContent = 'Analiza meczów...';
             const analyzedMatches = await analyzeAllMatches(matches, analysisDepth);
-            const predictions = await generatePredictions(analyzedMatches);
-            displayResults(analyzedMatches, predictions);
+            displayResults(analyzedMatches);
+            updateAccuracyDisplay();
             systemStatus.textContent = 'Analiza zakończona';
 
         } catch (error) {
@@ -360,71 +503,12 @@
         }
 
         const data = await response.json();
-
+        
         if (!data.response || data.response.length === 0) {
             throw new Error('Brak dostępnych meczów na wybrany dzień. Wybierz inną datę.');
         }
 
         return data.response;
-    }
-
-    async function fetchMatchData(fixtureId) {
-        const endpoints = [
-            ['statistics', `fixtures/statistics?fixture=${fixtureId}`],
-            ['events', `fixtures/events?fixture=${fixtureId}`],
-            ['lineups', `fixtures/lineups?fixture=${fixtureId}`],
-            ['players', `fixtures/players?fixture=${fixtureId}`],
-            ['odds', `odds?fixture=${fixtureId}`],
-            ['predictions', `predictions?fixture=${fixtureId}`]
-        ];
-
-        const results = await Promise.all(endpoints.map(async ([key, endpoint]) => {
-            try {
-                const response = await fetch(`${API_URL}/${endpoint}`, {
-                    headers: {
-                        'x-rapidapi-host': 'v3.football.api-sports.io',
-                        'x-rapidapi-key': API_KEY
-                    }
-                });
-                const data = await response.json();
-                return [key, data.response];
-            } catch (error) {
-                console.error(`Błąd pobierania ${key}:`, error);
-                return [key, null];
-            }
-        }));
-
-        return Object.fromEntries(results);
-    }
-
-    async function fetchTeamStats(teamId, leagueId) {
-        const response = await fetch(`${API_URL}/teams/statistics?team=${teamId}&league=${leagueId}`, {
-            headers: {
-                'x-rapidapi-host': 'v3.football.api-sports.io',
-                'x-rapidapi-key': API_KEY
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error('Nie udało się pobrać statystyk drużyny');
-        }
-
-        return await response.json();
-    }
-
-    async function fetchH2H(team1Id, team2Id) {
-        const response = await fetch(`${API_URL}/fixtures/headtohead?h2h=${team1Id}-${team2Id}`, {
-            headers: {
-                'x-rapidapi-host': 'v3.football.api-sports.io',
-                'x-rapidapi-key': API_KEY
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error('Nie udało się pobrać historii spotkań');
-        }
-
-        return await response.json();
     }
 
     // Inicjalizacja przy załadowaniu strony
@@ -435,31 +519,36 @@
         // Ustawienie aktualnej daty
         dateInput.valueAsDate = today;
         
-        // Ograniczenie wyboru daty do aktualnego sezonu
-        const seasonStart = new Date(today.getFullYear(), 6, 1); // 1 lipca
-        const seasonEnd = new Date(today.getFullYear() + 1, 5, 30); // 30 czerwca
+        // Ograniczenie wyboru daty
+        const maxDate = new Date();
+        maxDate.setDate(today.getDate() + 7);
+        dateInput.max = maxDate.toISOString().split('T')[0];
         
-        dateInput.min = seasonStart.toISOString().split('T')[0];
-        dateInput.max = seasonEnd.toISOString().split('T')[0];
+        const minDate = new Date();
+        minDate.setDate(today.getDate() - 7);
+        dateInput.min = minDate.toISOString().split('T')[0];
         
-        // Aktualizacja statystyk skuteczności
-        updateAccuracyStats();
+        updateAccuracyDisplay();
     });
 </script>
-    async function analyzeAllMatches(matches) {
-        const memory = loadMemory();
-        
+    async function analyzeAllMatches(matches, analysisDepth) {
         return Promise.all(matches.map(async match => {
             try {
                 const matchData = await fetchMatchData(match.fixture.id);
-                const analysis = analyzeMatchData(match, matchData, memory);
-                const predictions = generatePredictions(analysis, memory);
+                const analysis = analyzeMatchData(match, matchData, analysisDepth);
+                const predictions = generatePredictions(analysis, match);
+                
+                // Ulepszenie predykcji na podstawie danych historycznych
+                const improvedPredictions = predictions.map(pred => 
+                    memorySystem.improvePredictionConfidence(pred, match)
+                );
                 
                 // Sortowanie i wybór top 7 najlepszych typów
-                const topPredictions = Object.entries(predictions)
-                    .map(([type, pred]) => ({...pred, type}))
+                const topPredictions = improvedPredictions
                     .sort((a, b) => b.confidence - a.confidence)
                     .slice(0, 7);
+
+                memorySystem.storePrediction(match, topPredictions, calculateOverallConfidence(topPredictions));
 
                 return {
                     match: match,
@@ -473,7 +562,7 @@
         })).then(results => results.filter(result => result !== null));
     }
 
-    function analyzeMatchData(match, matchData, memory) {
+    function analyzeMatchData(match, matchData, analysisDepth) {
         const analysis = {
             teamStrength: calculateTeamStrength(matchData),
             recentForm: analyzeRecentForm(matchData),
@@ -486,71 +575,99 @@
             odds: analyzeOdds(matchData)
         };
 
-        // Uwzględnienie historycznych danych
-        if (memory.historicalData[match.fixture.id]) {
-            analysis.historicalAccuracy = calculateHistoricalAccuracy(memory.historicalData[match.fixture.id]);
+        if (analysisDepth === 'advanced' || analysisDepth === 'full') {
+            analysis.detailedStats = analyzeDetailedStats(matchData);
+            analysis.playerMatchups = analyzePlayerMatchups(matchData);
+            analysis.teamTactics = analyzeTeamTactics(matchData);
+        }
+
+        if (analysisDepth === 'full') {
+            analysis.historicalTrends = analyzeHistoricalTrends(matchData);
+            analysis.marketAnalysis = analyzeMarketTrends(matchData);
+            analysis.psychologicalFactors = analyzePsychologicalFactors(matchData);
         }
 
         return analysis;
     }
 
-    function generatePredictions(analysis, memory) {
-        return {
-            winner: predictWinner(analysis),
-            goals: predictGoals(analysis),
-            btts: predictBTTS(analysis),
-            corners: predictCorners(analysis),
-            cards: predictCards(analysis),
-            exactScore: predictExactScore(analysis),
-            firstHalf: predictFirstHalf(analysis),
-            handicap: predictHandicap(analysis)
-        };
+    function generatePredictions(analysis, match) {
+        return [
+            predictWinner(analysis, match),
+            predictGoals(analysis, match),
+            predictBTTS(analysis, match),
+            predictCorners(analysis, match),
+            predictCards(analysis, match),
+            predictExactScore(analysis, match),
+            predictFirstHalf(analysis, match),
+            predictHandicap(analysis, match),
+            predictDoubleChance(analysis, match)
+        ].filter(pred => pred.confidence >= 0.6); // Filtrowanie tylko wysokiej pewności
     }
 
-    function predictWinner(analysis) {
+    function predictWinner(analysis, match) {
         const homeStrength = calculateHomeStrength(analysis);
         const awayStrength = calculateAwayStrength(analysis);
-        const h2hFactor = analysis.h2hAnalysis.advantage;
-        const formFactor = analysis.recentForm.comparison;
+        const h2hFactor = analysis.h2hAnalysis.advantage || 0;
+        const formFactor = analysis.recentForm.comparison || 0;
+        const oddsImpact = analysis.odds?.winner || 0;
 
         let prediction, confidence, reason;
 
-        if (homeStrength > awayStrength * 1.2 && formFactor > 0) {
+        const totalStrengthHome = homeStrength + h2hFactor + formFactor + oddsImpact;
+        const totalStrengthAway = awayStrength - h2hFactor - formFactor - oddsImpact;
+
+        if (totalStrengthHome > totalStrengthAway * 1.2) {
             prediction = '1';
-            confidence = Math.min(0.85, (homeStrength / awayStrength) * formFactor);
-            reason = 'Znacząca przewaga gospodarzy potwierdzona formą';
-        } else if (awayStrength > homeStrength * 1.2 && formFactor < 0) {
+            confidence = Math.min(0.95, (totalStrengthHome / totalStrengthAway) * 0.8);
+            reason = 'Znacząca przewaga gospodarzy w kluczowych statystykach';
+        } else if (totalStrengthAway > totalStrengthHome * 1.2) {
             prediction = '2';
-            confidence = Math.min(0.85, (awayStrength / homeStrength) * Math.abs(formFactor));
-            reason = 'Znacząca przewaga gości potwierdzona formą';
+            confidence = Math.min(0.95, (totalStrengthAway / totalStrengthHome) * 0.8);
+            reason = 'Znacząca przewaga gości w kluczowych statystykach';
         } else {
             prediction = 'X';
-            confidence = 0.6;
-            reason = 'Wyrównane szanse obu drużyn';
+            confidence = 0.7;
+            reason = 'Wyrównane statystyki obu drużyn';
         }
 
-        return { prediction, confidence, reason };
+        return {
+            type: 'Zwycięzca',
+            prediction,
+            confidence,
+            reason,
+            details: {
+                homeStrength: totalStrengthHome,
+                awayStrength: totalStrengthAway,
+                h2hImpact: h2hFactor,
+                formImpact: formFactor
+            }
+        };
     }
 
-    function predictGoals(analysis) {
+    function predictGoals(analysis, match) {
         const avgGoals = (analysis.teamStrength.homeScoring + analysis.teamStrength.awayScoring) / 2;
-        const formFactor = analysis.recentForm.scoringTrend;
-        const h2hGoals = analysis.h2hAnalysis.averageGoals;
+        const formTrend = analysis.recentForm.scoringTrend || 0;
+        const h2hGoals = analysis.h2hAnalysis.averageGoals || 2.5;
+        const weatherImpact = analysis.weatherImpact?.scoringImpact || 0;
 
-        const prediction = avgGoals > 2.5 ? 'Powyżej 2.5' : 'Poniżej 2.5';
-        const confidence = calculateConfidence([avgGoals, formFactor, h2hGoals]);
-        const reason = `Średnia bramek: ${avgGoals.toFixed(1)}, Trend: ${formFactor > 0 ? 'wzrostowy' : 'spadkowy'}`;
+        const expectedGoals = (avgGoals * 0.4 + h2hGoals * 0.3 + formTrend * 0.2 + weatherImpact * 0.1);
+        
+        const prediction = expectedGoals > 2.5 ? 'Powyżej 2.5' : 'Poniżej 2.5';
+        const confidence = Math.min(0.95, Math.abs(expectedGoals - 2.5) * 0.4);
+        const trend = formTrend > 0 ? 'wzrostowy' : 'spadkowy';
 
-        return { prediction, confidence, reason };
-    }
-
-    function predictBTTS(analysis) {
-        const bttsChance = calculateBTTSProbability(analysis);
-        const prediction = bttsChance > 60 ? 'Tak' : 'Nie';
-        const confidence = bttsChance / 100;
-        const reason = `${bttsChance.toFixed(1)}% szans na bramki obu drużyn`;
-
-        return { prediction, confidence, reason };
+        return {
+            type: 'Gole',
+            prediction,
+            confidence,
+            reason: `Średnia bramek: ${expectedGoals.toFixed(2)}, trend: ${trend}`,
+            details: {
+                expectedGoals,
+                formTrend,
+                h2hAverage: h2hGoals,
+                weatherEffect: weatherImpact
+            }
+        };
     }
 
     function displayResults(analyzedMatches) {
@@ -573,6 +690,7 @@
                             <div class="confidence-meter">
                                 <div class="confidence-value" style="width: ${confidence}%"></div>
                             </div>
+                            ${pred.improvedByMemory ? '<p class="memory-improved">✨ Ulepszone przez system uczenia</p>' : ''}
                         </div>`;
                 })
                 .join('');
@@ -590,28 +708,29 @@
             
             container.appendChild(card);
         });
+
+        updateAccuracyDisplay();
     }
 
-    function calculateConfidence(factors) {
-        const weights = factors.map((factor, index) => 1 / (index + 1));
-        const weightedSum = factors.reduce((sum, factor, index) => sum + factor * weights[index], 0);
-        const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-        return Math.min(0.95, Math.max(0.5, weightedSum / totalWeight));
-    }
-
-    function updateAccuracyStats() {
-        const memory = loadMemory();
-        const accuracyStats = document.getElementById('accuracyStats');
+    function updateAccuracyDisplay() {
+        const stats = memorySystem.getAccuracyStats();
+        const accuracyStats = document.getElementById('analysisStats');
         
-        if (memory.accuracy) {
-            const totalPredictions = Object.values(memory.accuracy).reduce((sum, type) => sum + type.total, 0);
-            const correctPredictions = Object.values(memory.accuracy).reduce((sum, type) => sum + type.correct, 0);
-            const accuracy = totalPredictions > 0 ? (correctPredictions / totalPredictions * 100).toFixed(1) : 0;
-            
-            accuracyStats.textContent = `Skuteczność systemu: ${accuracy}% (${correctPredictions}/${totalPredictions})`;
+        if (stats.total > 0) {
+            const overallAccuracy = ((stats.correct / stats.total) * 100).toFixed(1);
+            accuracyStats.innerHTML = `
+                <div class="accuracy-info">
+                    <p>Ogólna skuteczność: ${overallAccuracy}%</p>
+                    <p>Liczba analiz: ${stats.total}</p>
+                </div>
+            `;
         } else {
-            accuracyStats.textContent = 'Brak danych o skuteczności';
+            accuracyStats.innerHTML = '<p>Brak danych historycznych</p>';
         }
+    }
+
+    function calculateOverallConfidence(predictions) {
+        return predictions.reduce((sum, pred) => sum + pred.confidence, 0) / predictions.length;
     }
 </script>
 </body>
